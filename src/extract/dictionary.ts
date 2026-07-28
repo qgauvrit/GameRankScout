@@ -50,6 +50,20 @@ export const MIN_TITLE_CHARS = 4;
 export const MIN_OWNERS = 50_000;
 export const MIN_REVIEWS = 200;
 
+/**
+ * A one-word title collides with prose and with longer proper nouns far more
+ * readily than a multi-word one — "Dark" matches inside "Dark Messiah" and
+ * "Doom: The Dark Ages", "Mountain" inside "Spiral Mountain". Capitalisation
+ * cannot separate those, because the colliding phrase is capitalised too.
+ *
+ * So a single-token title has to earn its place: it is only matchable when the
+ * game is well known enough that a bare mention of the word plausibly refers to
+ * it. This keeps Hades, Balatro, Celeste and Subnautica while dropping the
+ * catalogue's long tail of one-word titles.
+ */
+export const SINGLE_TOKEN_MIN_OWNERS = 1_000_000;
+export const SINGLE_TOKEN_MIN_REVIEWS = 10_000;
+
 const DIACRITICS = /[̀-ͯ]/g;
 
 /**
@@ -92,6 +106,8 @@ export interface BuildDictionaryOptions {
   minOwners?: number;
   minReviews?: number;
   minTitleChars?: number;
+  singleTokenMinOwners?: number;
+  singleTokenMinReviews?: number;
 }
 
 /**
@@ -110,6 +126,8 @@ export function buildDictionary(
     minOwners = MIN_OWNERS,
     minReviews = MIN_REVIEWS,
     minTitleChars = MIN_TITLE_CHARS,
+    singleTokenMinOwners = SINGLE_TOKEN_MIN_OWNERS,
+    singleTokenMinReviews = SINGLE_TOKEN_MIN_REVIEWS,
   } = options;
 
   const byNormalized = new Map<string, DictionaryEntry>();
@@ -131,11 +149,21 @@ export function buildDictionary(
     if (normalized.replace(/\s/g, '').length < minTitleChars) continue;
     if (byNormalized.has(normalized)) continue;
 
+    // One-word titles clear a much higher bar (see SINGLE_TOKEN_MIN_OWNERS).
+    const tokens = normalized.split(' ');
+    if (
+      tokens.length === 1 &&
+      max < singleTokenMinOwners &&
+      reviews < singleTokenMinReviews
+    ) {
+      continue;
+    }
+
     byNormalized.set(normalized, {
       gameId,
       name: row.name,
       normalized,
-      tokens: normalized.split(' '),
+      tokens,
       ownerMin: min,
       ownerMax: max,
       reviews,

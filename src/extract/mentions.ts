@@ -190,8 +190,16 @@ export function extractMentions(
     const end = tokens[candidate.endToken]!.end;
     const surface = text.slice(start, end);
 
-    if (!candidate.entry.ambiguous) return true;
     if (!requireEvidenceForAmbiguous) return true;
+
+    // A multi-word title is distinctive enough to stand on its own, even in
+    // lower case — "fallout 4" or "days gone" is not something you type by
+    // accident. A single word is not: the stoplist can never enumerate every
+    // English word that is also a game title (hook, risen, lost, gravitas all
+    // appeared in the sample), so capitalisation evidence is required for all
+    // of them rather than only the ones anyone thought to list.
+    const needsEvidence = candidate.entry.ambiguous || candidate.entry.tokens.length === 1;
+    if (!needsEvidence) return true;
 
     return isTitleCased(surface) || isQuoted(text, start, end);
   });

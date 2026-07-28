@@ -1,0 +1,18 @@
+{
+  "appid": 553420,
+  "name": "TUNIC",
+  "positive": 13921,
+  "negative": 1260,
+  "owners": "1,000,000 .. 2,000,000",
+  "genre": "Action, Adventure, RPG",
+  "tags": {
+    "Exploration": 467,
+    "Puzzle": 409,
+    "Souls-like": 344,
+    "Metroidvania": 338,
+    "Cute": 335,
+    "Action-Adventure": 313,
+    "Isometric": 310,
+    "Difficult": 304
+  }
+}

@@ -275,13 +275,13 @@ Cloudflare's free Workers tier allows 100k requests/day at 10ms CPU per invocati
 - KTD2. **Source adapters normalize to a single evidence record** carrying game reference, source, community, thread, timestamp, rank position, and engagement figures where the source exposes them. Adding a source means writing an adapter, not touching ranking. Governs R4, R5.
 - KTD3. **Mention extraction is dictionary matching with guards; fuzzy matching only confirms already-narrowed candidates.** Fuzzy search ranks a query against candidates and cannot answer "no game here", so scanning free text against a large catalogue with it produces false positives at scale. A normalized title dictionary plus a curated alias map is scanned in one pass with a multi-pattern automaton, then filtered by minimum length, a stoplist of titles that are ordinary English words, a capitalization or quoting requirement for ambiguous titles, and an existence floor. Governs R10, R11.
 - KTD4. **Thread magnitude is inferred from cross-window presence.** A thread appearing in the week, month and year top lists is large by construction, and those windows are already fetched. Comment-feed depth saturates near 100 and is used only as a tail tie-breaker. Governs R16.
-- KTD5. **The corpus is retained only at its latest state.** No per-run history is stored, because momentum is computed within a run rather than across runs (KTD12). Committing a full corpus per run would bloat the repository within a year for no benefit.
-- KTD6. **Ingest runs on a scheduled workflow that commits on every run.** The commit is what keeps the schedule alive, since the host disables schedules after 60 days of repository inactivity. Governs R6.
+- KTD5. **The corpus is retained only at its latest state, as a build output.** No per-run history is stored, because momentum is computed within a run rather than across runs (KTD12). Each run's corpus supersedes the last and is deployed with the app; nothing accumulates.
+- KTD6. **Ingest runs on a scheduled workflow that commits its run report on every run.** The commit is what keeps the schedule alive, since the host disables schedules after 60 days of repository inactivity. The run report carries per-source counts and outcomes only — never source content — so the heartbeat costs nothing in repository size and leaves failure history where it is searchable. Governs R6.
 - KTD7. **Ad-hoc community fetches go through an edge function** that owns cross-origin access, request pacing, and short-lived caching. Sources send no cross-origin headers, so the browser cannot fetch them directly at all. Governs R8.
 - KTD8. **Adapters and the scoring function are tested against recorded payloads.** No test reaches a live source, so the suite stays deterministic and does not consume rate limit. Governs R7.
 - KTD9. **Obscurity is derived from owner bands in the bulk catalogue; tag data is fetched per game and cached.** The bulk endpoint carries owner and review figures but not tags, so genre filtering costs a per-game call that only runs for games that actually ranked. Governs R13, R17, R21.
 - KTD10. **Reader state is local to the device and versioned with the corpus schema.** Dismissals, enabled sources and filter selections survive corpus refreshes without an account. Governs R9, R24.
-- KTD11. **The corpus stores references, not reproductions, and its history lives in a private repository separate from the public code.** Post and comment bodies are held only long enough to extract mentions, then discarded; what persists is game identifiers, scores, community names, thread titles and permalinks. This keeps GRS an index that links to source discussions rather than a republication of them, which is the distinction that matters for open-sourcing. The private data repository additionally keeps the accumulated history out of public archives — but it does not make the served corpus private, since a static client must be able to fetch it. (session-settled: user-directed — chosen over storing derived scores only and over accepting the risk unexamined: preserves thread links, which R14 depends on.) Governs R12, R14.
+- KTD11. **The corpus stores references, not reproductions, and is published as a deployment artifact rather than committed.** Post and comment bodies are held only long enough to extract mentions, then discarded; what persists is game identifiers, scores, community names, thread titles and permalinks. This keeps GRS an index linking to source discussions rather than a republication of them, which is the distinction that matters for open-sourcing. Because momentum is computed within a run (KTD12), the corpus needs no history, so it never enters version control at all — which removes the accumulated-content exposure rather than relocating it. (session-settled: user-directed — chosen over a separate private data repository and over committing the corpus alongside the code: no second repository and no cross-repository credential, at the cost of no accumulated history for future trend analysis.) Governs R12, R14.
 - KTD12. **Breakout and Rising are computed as the ratio of a game's recent-window weight to its historical-window weight, within one run.** Both windows are already fetched for the timeframe feature and cover the same communities, so a coverage change moves numerator and denominator together and cannot manufacture a spike. A game absent from the historical window scores as maximum rise rather than dividing by zero. This also makes momentum available from the first run. (session-settled: user-directed — chosen over fixed-cohort snapshot comparison: immune to community-set changes by construction, needs no stored history, and works from day one; the cost is that it cannot chart a trajectory over time.) Governs R18, R19.
 
 ### High-Level Technical Design
@@ -438,13 +438,13 @@ Three layers, built in dependency order. Ingest (U1–U7) produces a corpus that
 - **Requirements:** R12, R14
 - **Dependencies:** U1, U5
 - **Files:** `src/corpus/publish.ts`, `src/corpus/publish.test.ts`
-- **Approach:** Write the full corpus at its latest state only, per KTD5. Carry references rather than source text, per KTD11 — game identifiers, scores, community names, thread titles and permalinks, with post and comment bodies discarded after extraction. Retain each game's per-window weights so U8 can compute momentum within a run, per KTD12. Publish to the private data repository; the deployed app reads the corpus served alongside it.
+- **Approach:** Write the full corpus at its latest state only, per KTD5. Carry references rather than source text, per KTD11 — game identifiers, scores, community names, thread titles and permalinks, with post and comment bodies discarded after extraction. Retain each game's per-window weights so U8 can compute momentum within a run, per KTD12. Publish the corpus as a build output deployed with the app, per KTD11 — it is never committed. The run report is written separately for U7 to commit.
 - **Test scenarios:**
   - Publishing twice leaves exactly one corpus, with the second superseding the first.
   - A published corpus carries no post or comment body text.
   - Every ranked game carries a weight for each fetched window.
   - Every ranked game carries at least one thread permalink.
-- **Verification:** Repository growth per run is bounded by the size of one corpus, not by run count.
+- **Verification:** A published corpus is reachable by the app, and no corpus file is tracked by version control.
 
 ### U7. Scheduled ingest workflow and failure visibility
 
@@ -452,13 +452,14 @@ Three layers, built in dependency order. Ingest (U1–U7) produces a corpus that
 - **Requirements:** R6, R7
 - **Dependencies:** U2, U3, U6
 - **Files:** `.github/workflows/ingest.yml`, `src/ingest/run.ts`, `src/ingest/report.ts`
-- **Approach:** Orchestrate every enabled adapter across the supported windows with pacing. Commit on every run, including runs that produced no new evidence — the commit is what keeps the schedule alive. Write a run report into the corpus recording per-source success, counts, and rejections, so a source failing quietly becomes visible in the app rather than only in workflow logs.
+- **Approach:** Orchestrate every enabled adapter across the supported windows with pacing. Write a run report recording per-source success, counts, and rejections, so a source failing quietly becomes visible rather than only in workflow logs. Commit the run report on every run, including runs that produced no new evidence — the commit is what keeps the schedule alive, per KTD6. Deploy the corpus as a build output; never commit it.
 - **Execution note:** Prove the workflow end-to-end with a manual trigger before relying on the schedule.
 - **Test scenarios:**
   - A run where one source fails completes and records that source as failed in the run report.
   - A run producing no new evidence still commits.
   - A run where every source fails exits non-zero rather than publishing an empty corpus over a good one.
   - Per-source counts in the run report match the evidence actually published.
+  - A completed run leaves no corpus file tracked or staged; only the run report is committed.
 - **Verification:** A manually triggered run publishes a corpus and a run report, and the committed history shows one commit per run.
 
 ### U8. Ranking engine and modes

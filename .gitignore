@@ -20,7 +20,7 @@ coverage/
 *.pem
 .dev.vars
 
-# Corpus data — lives in the separate private data repository (KTD11).
+# Corpus data — published as a deployment artifact, never committed (KTD11).
 # Local ingest output and cached source payloads never belong in this repo.
 data/corpus/
 data/cache/

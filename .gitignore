@@ -41,3 +41,6 @@ test/fixtures/**/*.raw
 *.log
 npm-debug.log*
 yarn-error.log*
+
+# A locally generated corpus for development. Never committed (KTD11).
+public/corpus.json

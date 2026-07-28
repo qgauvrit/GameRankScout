@@ -1,0 +1,160 @@
+:root {
+  --bg: #11131a;
+  --surface: #181b24;
+  --surface-raised: #1f2330;
+  --border: #2a2f3d;
+  --text: #e7eaf0;
+  --text-dim: #99a1b3;
+  --accent: #7cf5c4;
+  --accent-dim: #3a8f77;
+  --warn: #f5c97c;
+
+  --radius: 14px;
+  --tap: 44px;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The app owns its own scrolling so the filter bar can pin without jitter. */
+#root {
+  min-height: 100dvh;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 1rem env(safe-area-inset-bottom);
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 0 0.75rem;
+}
+
+.masthead h1 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.masthead .freshness {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.notice {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.875rem;
+  color: var(--text-dim);
+}
+
+.notice strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.state h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.state p {
+  margin: 0;
+  max-width: 30rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.state .glyph {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+}
+
+/* Only the cold-load state spins; every other state is static by design. */
+.state .glyph.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state .glyph.spinning {
+    animation: none;
+  }
+}
+
+.button {
+  min-height: var(--tap);
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--accent-dim);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

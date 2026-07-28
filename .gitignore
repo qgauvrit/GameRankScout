@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Test and coverage
+coverage/
+.nyc_output/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+.dev.vars
+
+# Corpus data — lives in the separate private data repository (KTD11).
+# Local ingest output and cached source payloads never belong in this repo.
+data/corpus/
+data/cache/
+*.corpus.json
+
+# Recorded fixtures are committed deliberately; ignore raw scratch captures
+test/fixtures/**/*.raw
+.scratch/
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*

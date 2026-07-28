@@ -15,8 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit && eslint .",
-    "ingest": "tsx src/ingest/run.ts",
-    "ingest:dry": "tsx src/ingest/run.ts --dry",
+    "ingest": "tsx src/ingest/main.ts",
+    "ingest:dry": "tsx src/ingest/main.ts --dry",
     "dictionary": "tsx src/extract/build-dictionary.ts"
   },
   "dependencies": {

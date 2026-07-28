@@ -141,14 +141,23 @@ export function createHttpEnrichers(
     userAgent = 'GameRankScout/0.1 (+https://github.com/qgauvrit/GameRankScout)',
   } = options;
 
-  let lastRequestAt: number | null = null;
+  /**
+   * Pacing is per host, not global. Steam, SteamSpy and ProtonDB are unrelated
+   * services with their own limits; sharing one limiter across all three would
+   * serialize requests that could run concurrently and multiply the length of a
+   * run for no benefit to anyone.
+   */
+  const lastRequestByHost = new Map<string, number>();
 
   async function getJson(url: string): Promise<unknown | null> {
-    if (lastRequestAt !== null) {
-      const elapsed = nowImpl() - lastRequestAt;
+    const host = new URL(url).host;
+
+    const last = lastRequestByHost.get(host);
+    if (last !== undefined) {
+      const elapsed = nowImpl() - last;
       if (elapsed < minIntervalMs) await sleepImpl(minIntervalMs - elapsed);
     }
-    lastRequestAt = nowImpl();
+    lastRequestByHost.set(host, nowImpl());
 
     try {
       const response = await fetchImpl(url, {

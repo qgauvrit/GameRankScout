@@ -160,3 +160,45 @@ describe('http enrichers', () => {
     expect(deps.fetchConsolePlatforms).toBeUndefined();
   });
 });
+
+describe('per-host pacing', () => {
+  it('does not make one service wait on an unrelated one', async () => {
+    let now = 0;
+    const deps = createHttpEnrichers(memoryCache(), {
+      fetchImpl: (async () => new Response('{}', { status: 200 })) as typeof fetch,
+      minIntervalMs: 1_500,
+      sleepImpl: async (ms) => {
+        now += ms;
+      },
+      nowImpl: () => now,
+    });
+
+    // Steam, then SteamSpy, then ProtonDB — three different hosts, so none of
+    // them should wait on the others.
+    await deps.fetchAppDetails(1);
+    const before = now;
+    await deps.fetchSteamSpy(1);
+    await deps.fetchProtonTier(1);
+
+    expect(now).toBe(before);
+  });
+
+  it('still paces two requests to the same host', async () => {
+    let now = 0;
+    const deps = createHttpEnrichers(memoryCache(), {
+      fetchImpl: (async () => new Response('{}', { status: 200 })) as typeof fetch,
+      minIntervalMs: 1_500,
+      sleepImpl: async (ms) => {
+        now += ms;
+      },
+      nowImpl: () => now,
+    });
+
+    // appdetails and storesearch are both store.steampowered.com.
+    await deps.fetchAppDetails(1);
+    const before = now;
+    await deps.searchStore('tunic');
+
+    expect(now - before).toBeGreaterThanOrEqual(1_500);
+  });
+});

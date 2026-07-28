@@ -91,6 +91,32 @@ export const evidenceRecordSchema = z.object({
   engagement: engagementSchema.optional(),
 });
 
+/**
+ * What a source adapter emits, before mention extraction has run (KTD2).
+ *
+ * This is deliberately *not* an {@link EvidenceRecord}: one item can mention
+ * several games and so becomes several evidence records, and `text` is
+ * transient — it exists only long enough for extraction to read it and is
+ * discarded before publication, so no post or comment body ever reaches the
+ * corpus (KTD11).
+ */
+export const sourceItemSchema = z.object({
+  source: z.enum(SOURCE_IDS),
+  community: z.string().min(1),
+  thread: threadRefSchema,
+  window: z.enum(RANKING_WINDOWS),
+  rankPosition: z.number().int().nonnegative(),
+  postedAt: isoTimestamp,
+  kind: z.enum(['post', 'comment']),
+  /** For a comment, the id of the post it belongs to. Null for a post. */
+  parentThreadId: z.string().nullable(),
+  /** Transient body text. Never serialized into a corpus. */
+  text: z.string(),
+  engagement: engagementSchema.optional(),
+});
+
+export type SourceItem = z.infer<typeof sourceItemSchema>;
+
 export const ownerBandSchema = z.object({
   min: z.number().int().nonnegative(),
   max: z.number().int().nonnegative(),

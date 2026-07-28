@@ -79,6 +79,29 @@ describe('reddit listing feed', () => {
     expect(items[0]?.rankPosition).toBe(REDDIT_PAGE_LIMIT);
   });
 
+  it('parses a feed whose text nodes exceed the parser default entity limit', () => {
+    // A real full-size feed carries well over 1000 entities in a single post
+    // body. The parser aborts the whole document at that point, so this
+    // reproduces the density (not the content) of a real payload.
+    const body = '&lt;p&gt;It&amp;#39;s good&lt;/p&gt;'.repeat(300);
+    const bulk =
+      `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">` +
+      `<category term="patientgamers" label="r/patientgamers"/><id>/r/patientgamers/top/.rss</id>` +
+      `<entry><category term="patientgamers" label="r/patientgamers"/>` +
+      `<content type="html">${body}</content><id>t3_dense</id>` +
+      `<link href="https://www.reddit.com/r/patientgamers/comments/dense/" />` +
+      `<published>2026-02-05T15:05:07+00:00</published>` +
+      // Titles are single-escaped in real feeds; only bodies are double-escaped.
+      `<title>Dense &#39;thread&#39; &amp; more</title></entry></feed>`;
+
+    const { items } = parseListingFeed(bulk, { window: 'year' });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.text).toContain("It's good");
+    // Entities in the title are decoded too, now that the parser leaves them alone.
+    expect(items[0]?.thread.title).toBe("Dense 'thread' & more");
+  });
+
   it('returns no items and no cursor for a feed containing no entries', () => {
     const empty = `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>top scoring links : nothing</title><id>/r/nothing/top/.rss</id></feed>`;
 

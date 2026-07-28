@@ -47,8 +47,13 @@ export function assertValidCommunity(community: string): void {
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
-  processEntities: true,
-  htmlEntities: true,
+  // Entity decoding is done by decodeEntities below, not by the parser.
+  // The parser aborts a document whose text nodes carry more than ~1000
+  // entities, which a real full-size feed routinely exceeds, and its
+  // entityExpansionLimit option does not lift that ceiling in v4. Decoding
+  // here was redundant anyway: Reddit double-escapes HTML inside XML, so the
+  // payload needs two decode passes regardless of what the parser does.
+  processEntities: false,
   parseTagValue: false,
   trimValues: true,
 });
@@ -173,7 +178,7 @@ export function parseListingFeed(xml: string, options: ParseListingOptions): Lis
     const community = entryCommunity(entry, fallbackCommunity);
     if (!id || !permalink || !community) return;
 
-    const title = nodeText(entry.title);
+    const title = decodeEntities(nodeText(entry.title));
     const body = htmlToText(nodeText(entry.content));
 
     communities.add(community);
@@ -228,7 +233,7 @@ export function parseCommentFeed(
     if (!id || !permalink || !community) return;
 
     const isComment = id.startsWith('t1_');
-    const title = nodeText(entry.title);
+    const title = decodeEntities(nodeText(entry.title));
     const body = htmlToText(nodeText(entry.content));
 
     items.push({

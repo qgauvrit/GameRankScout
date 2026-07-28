@@ -10,8 +10,13 @@ export const ITCH_COMMUNITY = 'itch.io';
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
-  processEntities: true,
-  htmlEntities: true,
+  // Entity decoding is done by decodeEntities below, not by the parser.
+  // The parser aborts a document whose text nodes carry more than ~1000
+  // entities, which a real full-size feed routinely exceeds, and its
+  // entityExpansionLimit option does not lift that ceiling in v4. Decoding
+  // here was redundant anyway: Reddit double-escapes HTML inside XML, so the
+  // payload needs two decode passes regardless of what the parser does.
+  processEntities: false,
   parseTagValue: false,
   trimValues: true,
 });
@@ -19,6 +24,23 @@ const parser = new XMLParser({
 function toArray<T>(value: T | T[] | undefined | null): T[] {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+/** The parser no longer decodes entities, so titles are decoded here. */
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&([a-z]+);/gi, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
 }
 
 function text(value: unknown): string {
@@ -55,7 +77,7 @@ export function parseItchFeed(
       // The decorated <title> appends price and platform tags — "NAME [Free]
       // [Windows]" — which would otherwise reach the extractor as part of the
       // game's name. <plainTitle> is the undecorated form.
-      const title = text(item.plainTitle) || text(item.title);
+      const title = decodeEntities(text(item.plainTitle) || text(item.title));
       if (!title) return [];
 
       const published = text(item.pubDate) || text(item.createDate);

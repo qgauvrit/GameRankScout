@@ -125,3 +125,31 @@ describe('extractMentions', () => {
     expect(extractMentions('This was quite the adventure honestly.', noisy)).toEqual([]);
   });
 });
+
+describe('titles built entirely from ordinary words', () => {
+  const catalogue = [
+    ...CATALOGUE,
+    { appid: 601530, name: 'Last Year', owners: '500,000 .. 1,000,000', positive: 6_000, negative: 3_000 },
+    { appid: 322330, name: 'Dont Starve Together', owners: '10,000,000 .. 20,000,000', positive: 200_000, negative: 10_000 },
+  ];
+  const dict = buildDictionary(catalogue, { aliases: ALIASES });
+  const found = (text: string) => extractMentions(text, dict).map((m) => m.name);
+
+  it('does not match a title made of ordinary words used as prose', () => {
+    // This was ranking first in the default view off exactly this phrasing.
+    expect(found('I played it last year and bounced off it.')).toEqual([]);
+    expect(found('It took me about a week and a half last year.')).toEqual([]);
+  });
+
+  it('still matches that title when it is written as a title', () => {
+    expect(found('Last Year is a much better asymmetric horror game than it got credit for.')).toEqual([
+      'Last Year',
+    ]);
+  });
+
+  it('leaves a title containing a distinctive word alone', () => {
+    expect(found('me and a friend play dont starve together most evenings')).toEqual([
+      'Dont Starve Together',
+    ]);
+  });
+});

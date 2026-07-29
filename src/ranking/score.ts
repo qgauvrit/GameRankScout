@@ -49,6 +49,13 @@ export interface RankedGame {
   game: GameEntry;
   score: number;
   components: ScoreComponents;
+  /**
+   * The evidence records that actually produced this score — the selected
+   * window, from the enabled sources only. Carried out of the scoring function
+   * rather than re-derived by the view, so "why did this rank" cannot drift
+   * away from what was ranked (R14, R34).
+   */
+  contributing: EvidenceRecord[];
 }
 
 export interface RankingOptions {
@@ -173,6 +180,7 @@ function scoreGame(
   return {
     game,
     score,
+    contributing: relevant,
     components: {
       fusion,
       breadth,

@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadCorpus, localStorageStore, CorpusUnavailableError } from './corpus.js';
+import { Ranking } from './views/Ranking.js';
+import { rankGames } from '../ranking/score.js';
+import { sourceLabel } from './labels.js';
 import type { LoadedCorpus } from './corpus.js';
+import type { RankingMode } from '../ranking/modes.js';
+import type { RankingWindow } from '../corpus/schema.js';
 
 const CORPUS_URL = '/corpus.json';
+
+/**
+ * Unfamiliar-first is the default lens rather than a mode the reader opts into
+ * (D4). The mode and timeframe controls that move off these land in U11.
+ */
+const DEFAULT_MODE: RankingMode = 'hiddenGems';
+const DEFAULT_WINDOW: RankingWindow = 'week';
 
 type LoadState =
   | { status: 'loading' }
@@ -20,6 +32,14 @@ function formatFreshness(generatedAt: string): string {
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const corpus = state.status === 'ready' ? state.loaded.corpus : null;
+
+  // Ranking is a pure function over the corpus (R29), so it is recomputed rather
+  // than stored — and memoised so a re-render is not a re-rank.
+  const ranked = useMemo(
+    () => (corpus ? rankGames(corpus.games, { mode: DEFAULT_MODE, window: DEFAULT_WINDOW }) : []),
+    [corpus],
+  );
 
   const load = useCallback(() => {
     setState({ status: 'loading' });
@@ -62,14 +82,14 @@ export function App() {
     );
   }
 
-  const { corpus, origin } = state.loaded;
-  const failedSources = corpus.sources.filter((source) => !source.ok);
+  const { corpus: loadedCorpus, origin } = state.loaded;
+  const failedSources = loadedCorpus.sources.filter((source) => !source.ok);
 
   return (
     <div className="app">
       <header className="masthead">
         <h1>GameRankScout</h1>
-        <span className="freshness">{formatFreshness(corpus.generatedAt)}</span>
+        <span className="freshness">{formatFreshness(loadedCorpus.generatedAt)}</span>
       </header>
 
       {origin === 'cache' && (
@@ -87,15 +107,15 @@ export function App() {
           <span aria-hidden="true">◍</span>
           <span>
             <strong>
-              {failedSources.map((source) => source.source).join(', ')} did not respond during the
-              last update.
+              {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
+              during the last update.
             </strong>{' '}
-            The ranking is built from the sources that did.
+            The ranking is built from the sources that did, so it is thinner than usual.
           </span>
         </p>
       )}
 
-      {corpus.games.length === 0 ? (
+      {loadedCorpus.games.length === 0 ? (
         <div className="state">
           <div className="glyph" />
           <h2>No games ranked yet</h2>
@@ -105,15 +125,7 @@ export function App() {
           </p>
         </div>
       ) : (
-        <p className="notice">
-          <span aria-hidden="true">◍</span>
-          <span>
-            <strong>
-              {corpus.games.length} {corpus.games.length === 1 ? 'game' : 'games'} ranked.
-            </strong>{' '}
-            The ranking view lands in U10.
-          </span>
-        </p>
+        <Ranking ranked={ranked} />
       )}
     </div>
   );

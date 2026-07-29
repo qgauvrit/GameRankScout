@@ -36,5 +36,12 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'worker/**/*.test.ts'],
+    setupFiles: ['test/setup.ts'],
+    environmentOptions: {
+      // Without a real origin jsdom refuses to expose localStorage, and the
+      // offline corpus cache is exactly what the component tests need to
+      // exercise. A served app always has an origin, so this matches reality.
+      jsdom: { url: 'http://localhost:5173/' },
+    },
   },
 });

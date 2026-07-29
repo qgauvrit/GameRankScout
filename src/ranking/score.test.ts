@@ -417,4 +417,29 @@ describe('purity (R29)', () => {
       ['breadth', 'decay', 'engagement', 'fusion', 'magnitude', 'momentum', 'obscurity'].sort(),
     );
   });
+
+  it('carries out exactly the evidence that produced the score', () => {
+    // The drill-down cites these records directly rather than re-deriving them,
+    // so what the reader is shown cannot drift from what was ranked (R14).
+    const scoring = evidence({ community: 'r/a', window: 'year' });
+    const games = [
+      game({
+        id: 'a',
+        evidence: [
+          scoring,
+          evidence({ community: 'r/a', window: 'week' }),
+          evidence({ community: 'r/b', window: 'year', source: 'lemmy' }),
+        ],
+      }),
+    ];
+
+    const ranked = rankGames(games, {
+      mode: 'hiddenGems',
+      window: 'year',
+      now: NOW,
+      enabledSources: ['reddit'],
+    });
+
+    expect(ranked[0]!.contributing).toEqual([scoring]);
+  });
 });

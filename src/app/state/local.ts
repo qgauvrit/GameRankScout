@@ -55,6 +55,12 @@ export const readerStateSchema = z.object({
   /** Communities the reader added by hand (R3). */
   addedCommunities: z.array(readerCommunitySchema),
   filters: filtersSchema,
+  /**
+   * Whether the reader has been told what the default lens is. Defaulted rather
+   * than required so adding it does not invalidate state saved before it
+   * existed — a reader losing their dismissals to a copy change would be absurd.
+   */
+  introSeen: z.boolean().default(false),
 });
 
 export type ReaderState = z.infer<typeof readerStateSchema>;
@@ -67,6 +73,7 @@ export const DEFAULT_READER_STATE: ReaderState = {
   enabledRecommended: [],
   addedCommunities: [],
   filters: DEFAULT_FILTERS,
+  introSeen: false,
 };
 
 const STORAGE_KEY = `grs:reader:v${SCHEMA_VERSION}`;

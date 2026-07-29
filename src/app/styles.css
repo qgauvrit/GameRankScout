@@ -262,7 +262,8 @@ body {
 
 .mode {
   flex: none;
-  min-height: 38px;
+  /* Every control on this surface is a full tap target, not just most (R33). */
+  min-height: var(--tap);
   padding: 0 0.85rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -704,4 +705,25 @@ body {
   display: flex;
   justify-content: flex-end;
   padding-top: 0.25rem;
+}
+
+/*
+ * The one-time orientation note is not a warning, so it does not borrow the
+ * warning stripe every other notice uses.
+ */
+/*
+ * Orientation, not a warning, so it drops the warning stripe. Laid out as a
+ * grid rather than a wrapping flex row: the dismiss control belongs on its own
+ * line under the copy, and wrapping a flex row put the glyph there instead.
+ */
+.notice-intro {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  border-left-color: var(--accent-dim);
+}
+
+.notice-intro .link-button {
+  grid-column: 2;
+  justify-self: end;
 }

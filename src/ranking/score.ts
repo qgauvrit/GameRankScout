@@ -14,7 +14,22 @@ const BREADTH_WEIGHT = 0.8;
 
 /** Owner count at which obscurity is neutral; below it games are lifted. */
 const OWNER_PIVOT = 1_000_000;
-const OBSCURITY_EXPONENT = 0.35;
+
+/**
+ * How hard owner count bites. Measured against a real corpus rather than
+ * guessed: the failure it exists to prevent is a mainstream title outranking an
+ * unfamiliar one purely on volume, and a game discussed in 25 threads has
+ * roughly four times the fused rank of one discussed in six, so obscurity has
+ * to clear that gap to mean anything.
+ *
+ * At 0.35 it did not — Cyberpunk 2077, Baldur's Gate 3, Elden Ring and Red Dead
+ * Redemption 2 all sat in the default view's top ten, which is close to the
+ * opposite of the product. At 0.7 all four drop out and the median owner
+ * ceiling of the top ten falls from 5M to 1M; past 0.7 the ordering stops
+ * moving, so this is where obscurity starts to matter without discussion volume
+ * ceasing to (D4, R17, R31).
+ */
+const OBSCURITY_EXPONENT = 0.7;
 const OWNER_FLOOR = 5_000;
 
 /**

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadCorpus, localStorageStore, CorpusUnavailableError } from './corpus.js';
 import { Ranking } from './views/Ranking.js';
 import { FilterBar } from './filters/FilterBar.js';
-import { DEFAULT_FILTERS, applyRanking } from './filters/apply.js';
+import { DEFAULT_FILTERS, applyRanking, momentumAvailable } from './filters/apply.js';
 import { frequentTags } from './filters/tags.js';
 import { Settings } from './settings/Settings.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from './state/local.js';
 import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
 import { mergeAdhocItems } from './adhoc/merge.js';
-import { WINDOW_LABELS, sourceLabel } from './labels.js';
+import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
@@ -32,6 +32,30 @@ export type AdhocState =
   | { status: 'merged'; added: number }
   | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
 
+/**
+ * Whether the device thinks it has a network.
+ *
+ * Needed separately from where the corpus came from: the service worker answers
+ * from its own cache, so a corpus can arrive looking like a fresh fetch while
+ * the device is in a tunnel. Without this the reader is never told the ranking
+ * has stopped refreshing — which is the whole point of the offline state (R35).
+ */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => globalThis.navigator?.onLine ?? true);
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  return online;
+}
+
 function formatFreshness(generatedAt: string): string {
   const at = Date.parse(generatedAt);
   if (Number.isNaN(at)) return 'unknown';
@@ -45,6 +69,7 @@ export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [showSettings, setShowSettings] = useState(false);
   const [adhoc, setAdhoc] = useState<Record<string, AdhocState>>({});
+  const online = useOnline();
   // Read once at mount: the store is this tab's own, so re-reading it would only
   // risk clobbering an edit made a moment ago.
   const [reader, setReader] = useState<ReaderState>(() =>
@@ -198,7 +223,7 @@ export function App() {
         </div>
       </header>
 
-      {origin === 'cache' && (
+      {(origin === 'cache' || !online) && (
         <p className="notice">
           <span aria-hidden="true">◍</span>
           <span>
@@ -233,6 +258,37 @@ export function App() {
       ) : (
         <>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
+
+          {!reader.introSeen && (
+            <p className="notice notice-intro">
+              <span aria-hidden="true">◍</span>
+              <span>
+                <strong>This is Hidden gems.</strong> Ranked by how much communities are
+                discussing a game, then pushed down for how many people already own it. Open an
+                entry to see the threads behind it.
+              </span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
+              >
+                Got it
+              </button>
+            </p>
+          )}
+
+          {!momentumAvailable(loadedCorpus.games, reader.filters.mode) && (
+            <p className="notice" role="status">
+              <span aria-hidden="true">◍</span>
+              <span>
+                <strong>
+                  {MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.
+                </strong>{' '}
+                The last update did not cover the recent window this mode needs, so these are
+                ranked without any sense of momentum.
+              </span>
+            </p>
+          )}
 
           {result.relaxedFrom && (
             <p className="notice" role="status">

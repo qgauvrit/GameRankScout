@@ -1,4 +1,5 @@
 import { rankGames } from '../../ranking/score.js';
+import { RANKING_MODES } from '../../ranking/modes.js';
 import { ANY, inGenre, normalizeTag } from './genres.js';
 import type { RankedGame } from '../../ranking/score.js';
 import type { RankingMode } from '../../ranking/modes.js';
@@ -87,6 +88,23 @@ export function matchesFilters(game: GameEntry, filters: Filters): boolean {
   }
 
   return true;
+}
+
+/**
+ * Whether the selected mode's momentum term can say anything at all.
+ *
+ * Momentum is a recent-over-historical ratio computed inside one run (KTD12),
+ * so it needs the recent window to carry weight. A run scoped to fewer windows
+ * leaves that side empty, and the ratio then collapses to the same value for
+ * every game — the mode still ranks, but not by what its name promises. That is
+ * worth saying rather than letting the reader read a Breakout list that is not
+ * one (R35).
+ */
+export function momentumAvailable(games: GameEntry[], mode: RankingMode): boolean {
+  const preset = RANKING_MODES[mode];
+  if (preset.momentumWeight === 0 || !preset.momentum) return true;
+  const recent = preset.momentum.recent;
+  return games.some((game) => game.windowWeights[recent] > 0);
 }
 
 export interface ApplyOptions {

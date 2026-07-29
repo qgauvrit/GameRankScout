@@ -418,6 +418,34 @@ describe('purity (R29)', () => {
     );
   });
 
+  it('demotes a mega-selling title even when it is discussed more', () => {
+    // AE3 at the strength the real corpus demands: on a cold open the default
+    // view must not lead with the games everyone has already heard of, and a
+    // household name genuinely does out-discuss an unfamiliar one (R17, R31).
+    const householdName = game({
+      id: 'household',
+      ownerBand: { min: 20_000_000, max: 50_000_000 },
+      evidence: Array.from({ length: 12 }, () =>
+        evidence({ community: 'r/a', window: 'month' }),
+      ),
+    });
+    const unfamiliar = game({
+      id: 'unfamiliar',
+      ownerBand: { min: 100_000, max: 200_000 },
+      evidence: Array.from({ length: 4 }, () => evidence({ community: 'r/a', window: 'month' })),
+    });
+
+    expect(order([householdName, unfamiliar], { mode: 'hiddenGems', window: 'month', now: NOW })).toEqual([
+      'unfamiliar',
+      'household',
+    ]);
+    // And Top is still a faithful popularity ranking, unchanged by any of this.
+    expect(order([householdName, unfamiliar], { mode: 'top', window: 'month', now: NOW })).toEqual([
+      'household',
+      'unfamiliar',
+    ]);
+  });
+
   it('drops a community the reader switched off, without re-ingesting', () => {
     const games = [
       game({

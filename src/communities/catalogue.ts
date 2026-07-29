@@ -110,7 +110,7 @@ export const COMMUNITY_CATALOGUE: CommunityRef[] = [
     covers: ['survival'],
     tier: 'curated',
   },
-  { id: 'r/FPSGames', source: 'reddit', label: 'FPS Games', covers: ['shooter'], tier: 'curated' },
+  { id: 'r/fps', source: 'reddit', label: 'FPS', covers: ['shooter'], tier: 'curated' },
   {
     id: 'r/basebuildinggames',
     source: 'reddit',
@@ -181,10 +181,10 @@ export const COMMUNITY_CATALOGUE: CommunityRef[] = [
     tier: 'recommended',
   },
   {
-    id: 'r/tacticalgaming',
+    id: 'r/tacticalshooters',
     source: 'reddit',
-    label: 'Tactical Gaming',
-    covers: ['strategy'],
+    label: 'Tactical Shooters',
+    covers: ['shooter'],
     tier: 'recommended',
   },
   {
@@ -216,13 +216,7 @@ export const COMMUNITY_CATALOGUE: CommunityRef[] = [
     tier: 'recommended',
   },
   { id: 'r/PS5', source: 'reddit', label: 'PS5', covers: ['platform'], tier: 'recommended' },
-  {
-    id: 'r/XboxSeriesX',
-    source: 'reddit',
-    label: 'Xbox Series X',
-    covers: ['platform'],
-    tier: 'recommended',
-  },
+  { id: 'r/xbox', source: 'reddit', label: 'Xbox', covers: ['platform'], tier: 'recommended' },
   {
     id: 'r/AndroidGaming',
     source: 'reddit',

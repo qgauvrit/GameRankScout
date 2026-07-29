@@ -19,11 +19,16 @@ import { LEMMY_INSTANCE } from '../src/ingest/communities.js';
 import type { CommunityRef } from '../src/communities/catalogue.js';
 
 /**
- * Faster than an ingest run's pacing, because this makes one request per
- * community rather than one per community per window, and backs off on
- * rejection exactly as the adapter does.
+ * The same spacing the ingest uses. Trying to go faster was measured, not
+ * assumed: at 8s Reddit rejected almost exactly every second request, which
+ * turns a check into a coin toss — a rejection reads as "this community is
+ * gone" when it only means "you asked too quickly". A slow, trustworthy answer
+ * is the only kind worth having here.
  */
-const VERIFY_INTERVAL_MS = Number(process.env.GRS_VERIFY_INTERVAL_MS ?? 8_000);
+const VERIFY_INTERVAL_MS = Number(process.env.GRS_VERIFY_INTERVAL_MS ?? 30_000);
+
+/** No source gets to hang the check indefinitely. */
+const REQUEST_TIMEOUT_MS = 20_000;
 
 interface Outcome {
   community: CommunityRef;
@@ -73,8 +78,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const reddit = createRedditClient({ minIntervalMs: VERIFY_INTERVAL_MS });
-  const lemmy = createLemmyClient({ instance: LEMMY_INSTANCE });
+  const timedFetch: typeof fetch = (input, init) =>
+    fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+
+  const reddit = createRedditClient({
+    minIntervalMs: VERIFY_INTERVAL_MS,
+    fetchImpl: timedFetch,
+  });
+  const lemmy = createLemmyClient({ instance: LEMMY_INSTANCE, fetchImpl: timedFetch });
 
   console.log(`Checking ${targets.length} communities at ${VERIFY_INTERVAL_MS}ms spacing…\n`);
 

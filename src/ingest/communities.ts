@@ -1,22 +1,22 @@
+import { CURATED_COMMUNITIES } from '../communities/catalogue.js';
 import type { RankingWindow } from '../corpus/schema.js';
 
 /**
- * The seed community set the scheduled ingest sweeps.
+ * The community set the scheduled ingest sweeps.
  *
- * Every identifier here was verified reachable on 2026-07-28 by fetching it.
- * U12 owns the full curated and recommended lists spanning every top-level
- * genre in R21, along with the check that each identifier still resolves before
- * shipping; this list is deliberately limited to what has actually been
- * confirmed rather than assumed.
+ * Drawn from the curated tier of the shared catalogue, so the communities the
+ * app shows as on-by-default are exactly the ones the ingest actually visits —
+ * a reader looking at an enabled community that no run ever swept would be
+ * reading a lie. Each identifier is checked against the live source by
+ * `npm run verify:communities`.
  */
-const DEFAULT_REDDIT_COMMUNITIES = [
-  'r/patientgamers',
-  'r/gamingsuggestions',
-  'r/ShouldIbuythisgame',
-  'r/truegaming',
-];
+const DEFAULT_REDDIT_COMMUNITIES = CURATED_COMMUNITIES.filter(
+  (community) => community.source === 'reddit',
+).map((community) => community.id);
 
-const DEFAULT_LEMMY_COMMUNITIES = ['games'];
+const DEFAULT_LEMMY_COMMUNITIES = CURATED_COMMUNITIES.filter(
+  (community) => community.source === 'lemmy',
+).map((community) => community.id);
 
 const ALL_WINDOWS: RankingWindow[] = ['week', 'month', 'sixMonths', 'year'];
 

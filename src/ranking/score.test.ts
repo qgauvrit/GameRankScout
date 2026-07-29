@@ -418,6 +418,44 @@ describe('purity (R29)', () => {
     );
   });
 
+  it('drops a community the reader switched off, without re-ingesting', () => {
+    const games = [
+      game({
+        id: 'a',
+        evidence: [
+          evidence({ community: 'r/kept', window: 'year' }),
+          evidence({ community: 'r/dropped', window: 'year' }),
+        ],
+      }),
+      game({ id: 'b', evidence: [evidence({ community: 'r/dropped', window: 'year' })] }),
+    ];
+
+    const ranked = rankGames(games, {
+      mode: 'top',
+      window: 'year',
+      now: NOW,
+      disabledCommunities: ['r/dropped'],
+    });
+
+    expect(ranked.map((entry) => entry.game.id)).toEqual(['a']);
+    expect(ranked[0]!.contributing.map((record) => record.community)).toEqual(['r/kept']);
+  });
+
+  it('keeps contributing a community the reader never chose', () => {
+    // Disabling is stored as an exception, so a community the corpus gains
+    // arrives contributing rather than silently absent.
+    const games = [game({ id: 'a', evidence: [evidence({ community: 'r/brand-new', window: 'year' })] })];
+
+    const ranked = rankGames(games, {
+      mode: 'top',
+      window: 'year',
+      now: NOW,
+      disabledCommunities: ['r/dropped'],
+    });
+
+    expect(ranked).toHaveLength(1);
+  });
+
   it('carries out exactly the evidence that produced the score', () => {
     // The drill-down cites these records directly rather than re-deriving them,
     // so what the reader is shown cannot drift from what was ranked (R14).

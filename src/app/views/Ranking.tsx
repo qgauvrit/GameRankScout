@@ -6,6 +6,7 @@ import type { RankedGame } from '../../ranking/score.js';
 
 export interface RankingProps {
   ranked: RankedGame[];
+  onDismiss: (gameId: string) => void;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -27,7 +28,15 @@ function evidenceSummary(entry: RankedGame): string {
   )}`;
 }
 
-function Entry({ entry, position }: { entry: RankedGame; position: number }) {
+function Entry({
+  entry,
+  position,
+  onDismiss,
+}: {
+  entry: RankedGame;
+  position: number;
+  onDismiss: (gameId: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { game } = entry;
   const detailId = `evidence-${game.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
@@ -62,7 +71,12 @@ function Entry({ entry, position }: { entry: RankedGame; position: number }) {
       </div>
 
       {expanded && (
-        <GameDetail id={detailId} game={game} contributing={entry.contributing} />
+        <GameDetail
+          id={detailId}
+          game={game}
+          contributing={entry.contributing}
+          onDismiss={onDismiss}
+        />
       )}
     </li>
   );
@@ -73,7 +87,7 @@ function Entry({ entry, position }: { entry: RankedGame; position: number }) {
  * that row are one tap away — the thread links are the product's actual output,
  * so nothing may sit between the ranking and them.
  */
-export function Ranking({ ranked }: RankingProps) {
+export function Ranking({ ranked, onDismiss }: RankingProps) {
   if (ranked.length === 0) {
     return (
       <div className="state">
@@ -90,7 +104,7 @@ export function Ranking({ ranked }: RankingProps) {
   return (
     <ol className="ranking">
       {ranked.map((entry, index) => (
-        <Entry entry={entry} key={entry.game.id} position={index + 1} />
+        <Entry entry={entry} key={entry.game.id} position={index + 1} onDismiss={onDismiss} />
       ))}
     </ol>
   );

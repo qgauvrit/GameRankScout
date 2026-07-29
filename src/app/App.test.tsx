@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App.js';
 import { MIN_USEFUL_RESULTS } from './filters/apply.js';
@@ -190,6 +190,209 @@ describe('app shell', () => {
 
     await user.click(screen.getByRole('button', { name: /reset filters/i }));
     expect(screen.getByRole('button', { name: /Desktop Pick/i })).toBeInTheDocument();
+  });
+
+  it('covers AE6: a dismissed game stays out of every mode and timeframe', async () => {
+    const user = userEvent.setup();
+    serveCorpus(
+      corpus({
+        games: [
+          game({
+            id: 'steam:1',
+            name: 'Signal Drift',
+            evidence: [
+              evidence({ community: 'r/patientgamers', window: 'week' }),
+              evidence({ community: 'r/patientgamers', window: 'year' }),
+            ],
+          }),
+          game({
+            id: 'steam:2',
+            name: 'Broadcast Storm',
+            // Present in every window, so the assertion after the reload is
+            // about the dismissal rather than about which timeframe stuck.
+            evidence: [
+              evidence({ community: 'r/patientgamers', window: 'week' }),
+              evidence({ community: 'r/patientgamers', window: 'month' }),
+              evidence({ community: 'r/patientgamers', window: 'sixMonths' }),
+              evidence({ community: 'r/patientgamers', window: 'year' }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const { unmount } = render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Signal Drift/i }));
+    await user.click(screen.getByRole('button', { name: /hide this game/i }));
+
+    expect(screen.queryByRole('button', { name: /Signal Drift/i })).toBeNull();
+
+    for (const mode of ['Top', 'Most discussed', 'Breakout', 'Rising']) {
+      await user.click(screen.getByRole('button', { name: mode }));
+      expect(screen.queryByRole('button', { name: /Signal Drift/i })).toBeNull();
+    }
+    await user.selectOptions(screen.getByLabelText(/timeframe/i), 'year');
+    expect(screen.queryByRole('button', { name: /Signal Drift/i })).toBeNull();
+
+    // And it is still gone on the next visit, against a freshly fetched corpus.
+    unmount();
+    render(<App />);
+    await screen.findByRole('button', { name: /Broadcast Storm/i });
+    expect(screen.queryByRole('button', { name: /Signal Drift/i })).toBeNull();
+  });
+
+  it('covers AE5: disabling a source drops its evidence with no re-ingest', async () => {
+    const user = userEvent.setup();
+    serveCorpus(
+      corpus({
+        games: [
+          game({
+            id: 'steam:1',
+            name: 'Lemmy Only',
+            evidence: [
+              evidence({ community: 'lemmy.world/c/games', window: 'week', source: 'lemmy' }),
+            ],
+          }),
+          game({ id: 'steam:2', name: 'Reddit Only' }),
+        ],
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('button', { name: /Lemmy Only/i });
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    await user.click(sources.getByRole('checkbox', { name: /Lemmy/i }));
+    await user.click(screen.getByRole('button', { name: /done/i }));
+
+    expect(screen.queryByRole('button', { name: /Lemmy Only/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Reddit Only/i })).toBeInTheDocument();
+    // No refetch: the corpus in hand already carries which source said what.
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a community the reader added across reloads', async () => {
+    const user = userEvent.setup();
+    serveCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
+
+    const { unmount } = render(<App />);
+    await screen.findByRole('button', { name: /Signal Drift/i });
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(screen.getByText('r/emulation')).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /settings/i }));
+    expect(screen.getByText('r/emulation')).toBeInTheDocument();
+  });
+
+  it('lets a community the reader adds change the ranking before the next run', async () => {
+    const user = userEvent.setup();
+    const body = serializeCorpus(
+      corpus({
+        games: [
+          game({
+            id: 'steam:1',
+            name: 'Stardew Valley',
+            ownerBand: { min: 500_000, max: 1_000_000 },
+            reviewCount: 20_000,
+          }),
+        ],
+      }),
+    );
+    // The corpus and the on-demand path are different endpoints, so the stub
+    // has to be one too — otherwise the test proves nothing about the merge.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/adhoc')) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  source: 'reddit',
+                  community: 'r/emulation',
+                  thread: {
+                    id: 't3_adhoc',
+                    title: 'Cosiest games this year',
+                    permalink: 'https://reddit.test/comments/adhoc/',
+                  },
+                  window: 'week',
+                  rankPosition: 0,
+                  postedAt: '2026-07-27T09:00:00.000Z',
+                  kind: 'post',
+                  parentThreadId: null,
+                  text: 'Stardew Valley, every time.',
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(body, { status: 200 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Stardew Valley/i }));
+    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
+      /1 thread across 1 community/i,
+    );
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(await screen.findByText(/1 mention added to this session/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /done/i }));
+    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
+      /2 threads across 2 communities/i,
+    );
+  });
+
+  it('says so plainly when the on-demand path cannot be reached', async () => {
+    const user = userEvent.setup();
+    const body = serializeCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/adhoc')) throw new TypeError('no function deployed');
+        return new Response(body, { status: 200 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('button', { name: /Signal Drift/i });
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    // The community is still added — it just waits for the scheduled run.
+    expect(await screen.findByText(/could not reach it/i)).toBeInTheDocument();
+    expect(screen.getByText('r/emulation')).toBeInTheDocument();
+  });
+
+  it('brings a dismissed game back when the reader undoes it', async () => {
+    const user = userEvent.setup();
+    serveCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
+
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Signal Drift/i }));
+    await user.click(screen.getByRole('button', { name: /hide this game/i }));
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.click(screen.getByRole('button', { name: /bring back/i }));
+    await user.click(screen.getByRole('button', { name: /done/i }));
+
+    expect(screen.getByRole('button', { name: /Signal Drift/i })).toBeInTheDocument();
   });
 
   it('says it is showing a cached ranking when the network is unreachable', async () => {

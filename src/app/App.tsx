@@ -4,9 +4,20 @@ import { Ranking } from './views/Ranking.js';
 import { FilterBar } from './filters/FilterBar.js';
 import { DEFAULT_FILTERS, applyRanking } from './filters/apply.js';
 import { frequentTags } from './filters/tags.js';
+import { Settings } from './settings/Settings.js';
+import {
+  DEFAULT_READER_STATE,
+  loadReaderState,
+  localReaderStore,
+  saveReaderState,
+} from './state/local.js';
+import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
+import { mergeAdhocItems } from './adhoc/merge.js';
 import { WINDOW_LABELS, sourceLabel } from './labels.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
+import type { ReaderState } from './state/local.js';
+import type { CommunityRef } from '../communities/catalogue.js';
 
 const CORPUS_URL = '/corpus.json';
 
@@ -14,6 +25,12 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; loaded: LoadedCorpus }
   | { status: 'unavailable'; error: unknown };
+
+/** How the on-demand pull for one added community is going. */
+export type AdhocState =
+  | { status: 'loading' }
+  | { status: 'merged'; added: number }
+  | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
 
 function formatFreshness(generatedAt: string): string {
   const at = Date.parse(generatedAt);
@@ -26,8 +43,69 @@ function formatFreshness(generatedAt: string): string {
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [showSettings, setShowSettings] = useState(false);
+  const [adhoc, setAdhoc] = useState<Record<string, AdhocState>>({});
+  // Read once at mount: the store is this tab's own, so re-reading it would only
+  // risk clobbering an edit made a moment ago.
+  const [reader, setReader] = useState<ReaderState>(() =>
+    typeof localStorage === 'undefined' ? DEFAULT_READER_STATE : loadReaderState(localReaderStore()),
+  );
   const corpus = state.status === 'ready' ? state.loaded.corpus : null;
+
+  // Persisting from an effect rather than from each setter keeps every path
+  // that changes reader state saved, including ones added later.
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined') saveReaderState(localReaderStore(), reader);
+  }, [reader]);
+
+  const setFilters = useCallback(
+    (filters: Filters) => setReader((current) => ({ ...current, filters })),
+    [],
+  );
+
+  const dismissGame = useCallback((gameId: string) => {
+    setReader((current) =>
+      current.dismissedGameIds.includes(gameId)
+        ? current
+        : { ...current, dismissedGameIds: [...current.dismissedGameIds, gameId] },
+    );
+  }, []);
+
+  /**
+   * Pulls a community the scheduled ingest has not covered and folds it into
+   * this session's corpus, so adding one changes the ranking now rather than
+   * after the next run (R8, F3). The merge is deliberately not written back to
+   * the offline cache: what a reload restores to should be the published
+   * corpus, not one session's additions.
+   */
+  const pullCommunity = useCallback(
+    async (community: CommunityRef) => {
+      if (!corpus) return;
+      setAdhoc((current) => ({ ...current, [community.id]: { status: 'loading' } }));
+      try {
+        const items = await fetchAdhocCommunity(community, reader.filters.window);
+        const merged = mergeAdhocItems(corpus, items);
+        setState((current) =>
+          current.status === 'ready'
+            ? { ...current, loaded: { ...current.loaded, corpus: merged.corpus } }
+            : current,
+        );
+        setAdhoc((current) => ({
+          ...current,
+          [community.id]: { status: 'merged', added: merged.added },
+        }));
+      } catch (error) {
+        setAdhoc((current) => ({
+          ...current,
+          [community.id]: {
+            status: 'failed',
+            reason: error instanceof AdhocUnavailableError ? error.reason : 'unreachable',
+          },
+        }));
+      }
+    },
+    [corpus, reader.filters.window],
+  );
 
   const tags = useMemo(() => frequentTags(corpus?.games ?? []), [corpus]);
 
@@ -35,8 +113,13 @@ export function App() {
   // filter change is a recompute rather than a round trip — which is what lets
   // the ranking re-render with no loading state in between (R32).
   const result = useMemo(
-    () => applyRanking(corpus?.games ?? [], filters),
-    [corpus, filters],
+    () =>
+      applyRanking(corpus?.games ?? [], reader.filters, {
+        enabledSources: reader.enabledSources,
+        disabledCommunities: reader.disabledCommunities,
+        dismissedGameIds: reader.dismissedGameIds,
+      }),
+    [corpus, reader],
   );
 
   const load = useCallback(() => {
@@ -83,11 +166,36 @@ export function App() {
   const { corpus: loadedCorpus, origin } = state.loaded;
   const failedSources = loadedCorpus.sources.filter((source) => !source.ok);
 
+  if (showSettings) {
+    return (
+      <div className="app">
+        <Settings
+          state={reader}
+          onChange={setReader}
+          corpus={loadedCorpus}
+          adhoc={adhoc}
+          onPull={pullCommunity}
+          onClose={() => setShowSettings(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <header className="masthead">
         <h1>GameRankScout</h1>
-        <span className="freshness">{formatFreshness(loadedCorpus.generatedAt)}</span>
+        <div className="masthead-end">
+          <span className="freshness">{formatFreshness(loadedCorpus.generatedAt)}</span>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setShowSettings(true)}
+            aria-label="Settings"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+        </div>
       </header>
 
       {origin === 'cache' && (
@@ -124,7 +232,7 @@ export function App() {
         </div>
       ) : (
         <>
-          <FilterBar filters={filters} onChange={setFilters} tags={tags} />
+          <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
 
           {result.relaxedFrom && (
             <p className="notice" role="status">
@@ -150,7 +258,7 @@ export function App() {
               </button>
             </div>
           ) : (
-            <Ranking ranked={result.ranked} />
+            <Ranking ranked={result.ranked} onDismiss={dismissGame} />
           )}
         </>
       )}

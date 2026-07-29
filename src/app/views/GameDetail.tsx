@@ -11,6 +11,7 @@ export interface GameDetailProps {
   game: GameEntry;
   /** The records that produced this game's rank, from `RankedGame.contributing`. */
   contributing: EvidenceRecord[];
+  onDismiss: (gameId: string) => void;
 }
 
 interface ThreadCitation {
@@ -61,7 +62,7 @@ export function citedThreads(contributing: EvidenceRecord[]): ThreadCitation[] {
  * so each block is either rendered with real content or stated as unresolved.
  * Nothing renders as a blank.
  */
-export function GameDetail({ id, game, contributing }: GameDetailProps) {
+export function GameDetail({ id, game, contributing, onDismiss }: GameDetailProps) {
   const threads = citedThreads(contributing);
   const owners = ownerBandLabel(game.ownerBand);
   const deck = game.handheld ? DECK_LABELS[game.handheld.deck] : null;
@@ -128,6 +129,17 @@ export function GameDetail({ id, game, contributing }: GameDetailProps) {
           The threads behind this entry came from a source that is switched off.
         </p>
       )}
+
+      {/*
+        Deliberately not naming the game: the button sits inside a region
+        already labelled with it, and repeating the name here would collide with
+        the entry's own control for anything selecting by accessible name.
+      */}
+      <div className="detail-actions">
+        <button type="button" className="link-button" onClick={() => onDismiss(game.id)}>
+          Not for me — hide this game
+        </button>
+      </div>
     </section>
   );
 }

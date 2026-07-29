@@ -92,6 +92,7 @@ export function matchesFilters(game: GameEntry, filters: Filters): boolean {
 export interface ApplyOptions {
   now?: number;
   enabledSources?: SourceId[];
+  disabledCommunities?: string[];
   dismissedGameIds?: string[];
 }
 
@@ -118,6 +119,9 @@ function rankIn(
     window,
     ...(options.now !== undefined ? { now: options.now } : {}),
     ...(options.enabledSources !== undefined ? { enabledSources: options.enabledSources } : {}),
+    ...(options.disabledCommunities !== undefined
+      ? { disabledCommunities: options.disabledCommunities }
+      : {}),
     ...(options.dismissedGameIds !== undefined
       ? { dismissedGameIds: options.dismissedGameIds }
       : {}),

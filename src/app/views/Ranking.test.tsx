@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Ranking } from './Ranking.js';
 import { rankGames } from '../../ranking/score.js';
 import { evidence, game } from '../../../test/factory.js';
+import type { RankedGame } from '../../ranking/score.js';
 import type { GameEntry } from '../../corpus/schema.js';
 
 function rank(games: GameEntry[]) {
@@ -13,6 +14,11 @@ function rank(games: GameEntry[]) {
     window: 'week',
     now: Date.parse('2026-07-28T00:00:00.000Z'),
   });
+}
+
+function renderRanking(ranked: RankedGame[], onDismiss = vi.fn()) {
+  const result = render(<Ranking ranked={ranked} onDismiss={onDismiss} />);
+  return { ...result, onDismiss };
 }
 
 function entryFor(name: string) {
@@ -34,7 +40,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
 
     const entries = screen.getAllByRole('listitem');
     expect(entries).toHaveLength(2);
@@ -64,7 +70,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
 
     // Nothing before the interaction...
     expect(screen.queryByRole('link', { name: /What did you play this week/i })).toBeNull();
@@ -80,7 +86,7 @@ describe('ranking view', () => {
     const user = userEvent.setup();
     const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     const thread = screen.getByRole('link', { name: /Thread/i });
@@ -101,7 +107,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     const detail = screen.getByRole('region', { name: /Signal Drift/i });
@@ -127,7 +133,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     expect(screen.getAllByRole('link', { name: /The one everyone read/i })).toHaveLength(1);
@@ -142,7 +148,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
 
     expect(screen.getByRole('link', { name: /Steam/i })).toHaveAttribute(
       'href',
@@ -165,7 +171,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     // The name and the evidence are what actually resolved, and both still show.
@@ -181,7 +187,7 @@ describe('ranking view', () => {
     const user = userEvent.setup();
     const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     const toggle = entryFor('Signal Drift');
 
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -204,13 +210,24 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
 
     expect(entryFor('Signal Drift')).toHaveTextContent(/2 threads.*2 communities/i);
   });
 
+  it('offers to dismiss a game from its own evidence panel', async () => {
+    const user = userEvent.setup();
+    const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
+
+    const { onDismiss } = renderRanking(ranked);
+    await user.click(entryFor('Signal Drift'));
+    await user.click(screen.getByRole('button', { name: /hide this game/i }));
+
+    expect(onDismiss).toHaveBeenCalledWith('steam:1');
+  });
+
   it('renders a designed empty state rather than an empty list', () => {
-    render(<Ranking ranked={[]} />);
+    renderRanking([]);
 
     expect(screen.queryByRole('list')).toBeNull();
     expect(screen.getByRole('heading', { name: /nothing ranked/i })).toBeTruthy();
@@ -223,7 +240,7 @@ describe('ranking view', () => {
       game({ id: 'steam:2', name: 'Broadcast Storm' }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     expect(screen.getByRole('region', { name: /Signal Drift/i })).toBeTruthy();
@@ -243,7 +260,7 @@ describe('ranking view', () => {
       }),
     ]);
 
-    render(<Ranking ranked={ranked} />);
+    renderRanking(ranked);
     await user.click(entryFor('Signal Drift'));
 
     const detail = within(screen.getByRole('region', { name: /Signal Drift/i }));

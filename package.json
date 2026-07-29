@@ -17,7 +17,8 @@
     "lint": "tsc --noEmit && eslint .",
     "ingest": "tsx src/ingest/main.ts",
     "ingest:dry": "tsx src/ingest/main.ts --dry",
-    "dictionary": "tsx src/extract/build-dictionary.ts"
+    "dictionary": "tsx src/extract/build-dictionary.ts",
+    "verify:communities": "tsx scripts/verify-communities.ts"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.1",

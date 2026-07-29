@@ -65,6 +65,12 @@ export interface RankingOptions {
   now?: number;
   /** When given, only evidence from these sources contributes (R9). */
   enabledSources?: SourceId[];
+  /**
+   * Communities switched off by the reader. An exclusion rather than a
+   * selection, because the corpus gains communities the reader never chose —
+   * those should arrive contributing, not silently absent.
+   */
+  disabledCommunities?: string[];
   dismissedGameIds?: string[];
 }
 
@@ -116,24 +122,22 @@ function scoreGame(
   preset: ModePreset,
   options: Required<Pick<RankingOptions, 'window' | 'now'>> & {
     enabledSources?: SourceId[];
+    disabledCommunities?: string[];
   },
 ): RankedGame | null {
-  const { window, now, enabledSources } = options;
+  const { window, now, enabledSources, disabledCommunities } = options;
 
-  const relevant = game.evidence.filter(
-    (record) =>
-      record.window === window &&
-      (enabledSources === undefined || enabledSources.includes(record.source)),
-  );
+  const counts = (record: EvidenceRecord): boolean =>
+    (enabledSources === undefined || enabledSources.includes(record.source)) &&
+    (disabledCommunities === undefined || !disabledCommunities.includes(record.community));
+
+  const available = game.evidence.filter(counts);
+  const relevant = available.filter((record) => record.window === window);
   if (relevant.length === 0) return null;
 
   // Magnitude is inferred across *all* windows, not just the selected one —
   // that cross-window presence is the whole signal (KTD4).
-  const magnitudes = threadMagnitudes(
-    game.evidence.filter(
-      (record) => enabledSources === undefined || enabledSources.includes(record.source),
-    ),
-  );
+  const magnitudes = threadMagnitudes(available);
 
   let fusion = 0;
   let magnitudeTotal = 0;
@@ -210,6 +214,9 @@ export function rankGames(games: GameEntry[], options: RankingOptions): RankedGa
       window: options.window,
       now,
       ...(options.enabledSources !== undefined ? { enabledSources: options.enabledSources } : {}),
+      ...(options.disabledCommunities !== undefined
+        ? { disabledCommunities: options.disabledCommunities }
+        : {}),
     });
     if (scored && scored.score > 0) ranked.push(scored);
   }

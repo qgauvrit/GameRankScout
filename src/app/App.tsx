@@ -1,20 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadCorpus, localStorageStore, CorpusUnavailableError } from './corpus.js';
 import { Ranking } from './views/Ranking.js';
-import { rankGames } from '../ranking/score.js';
-import { sourceLabel } from './labels.js';
+import { FilterBar } from './filters/FilterBar.js';
+import { DEFAULT_FILTERS, applyRanking } from './filters/apply.js';
+import { frequentTags } from './filters/tags.js';
+import { WINDOW_LABELS, sourceLabel } from './labels.js';
 import type { LoadedCorpus } from './corpus.js';
-import type { RankingMode } from '../ranking/modes.js';
-import type { RankingWindow } from '../corpus/schema.js';
+import type { Filters } from './filters/apply.js';
 
 const CORPUS_URL = '/corpus.json';
-
-/**
- * Unfamiliar-first is the default lens rather than a mode the reader opts into
- * (D4). The mode and timeframe controls that move off these land in U11.
- */
-const DEFAULT_MODE: RankingMode = 'hiddenGems';
-const DEFAULT_WINDOW: RankingWindow = 'week';
 
 type LoadState =
   | { status: 'loading' }
@@ -32,13 +26,17 @@ function formatFreshness(generatedAt: string): string {
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const corpus = state.status === 'ready' ? state.loaded.corpus : null;
 
-  // Ranking is a pure function over the corpus (R29), so it is recomputed rather
-  // than stored — and memoised so a re-render is not a re-rank.
-  const ranked = useMemo(
-    () => (corpus ? rankGames(corpus.games, { mode: DEFAULT_MODE, window: DEFAULT_WINDOW }) : []),
-    [corpus],
+  const tags = useMemo(() => frequentTags(corpus?.games ?? []), [corpus]);
+
+  // Filtering and ranking are pure functions over the loaded corpus (R29), so a
+  // filter change is a recompute rather than a round trip — which is what lets
+  // the ranking re-render with no loading state in between (R32).
+  const result = useMemo(
+    () => applyRanking(corpus?.games ?? [], filters),
+    [corpus, filters],
   );
 
   const load = useCallback(() => {
@@ -125,7 +123,36 @@ export function App() {
           </p>
         </div>
       ) : (
-        <Ranking ranked={ranked} />
+        <>
+          <FilterBar filters={filters} onChange={setFilters} tags={tags} />
+
+          {result.relaxedFrom && (
+            <p className="notice" role="status">
+              <span aria-hidden="true">◍</span>
+              <span>
+                <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
+                Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every
+                other filter is untouched.
+              </span>
+            </p>
+          )}
+
+          {result.exhausted ? (
+            <div className="state">
+              <div className="glyph" />
+              <h2>Nothing matches those filters</h2>
+              <p>
+                No game in this corpus fits that combination at any timeframe. Widening it further
+                would not help — there is genuinely nothing there.
+              </p>
+              <button type="button" className="button" onClick={() => setFilters(DEFAULT_FILTERS)}>
+                Reset filters
+              </button>
+            </div>
+          ) : (
+            <Ranking ranked={result.ranked} />
+          )}
+        </>
       )}
     </div>
   );

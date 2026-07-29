@@ -1,4 +1,5 @@
 import type { Platform, RankingWindow, SourceId } from '../corpus/schema.js';
+import type { RankingMode } from '../ranking/modes.js';
 
 /**
  * Reader-facing names for the corpus vocabulary. Kept in one place because the
@@ -42,6 +43,15 @@ export const WINDOW_LABELS: Record<RankingWindow, string> = {
   month: 'Past month',
   sixMonths: 'Past six months',
   year: 'Past year',
+};
+
+/** Same order the mode control offers them in; Hidden gems leads because it is the default lens (D4). */
+export const MODE_LABELS: Record<RankingMode, string> = {
+  hiddenGems: 'Hidden gems',
+  top: 'Top',
+  mostDiscussed: 'Most discussed',
+  breakout: 'Breakout',
+  rising: 'Rising',
 };
 
 /** Steam's verdict, phrased the way the badge itself reads on the store. */

@@ -24,8 +24,13 @@ jobs:
   ingest:
     runs-on: ubuntu-latest
     # A full sweep is paced to stay inside every source's rate limits (R7), so
-    # it is slow by design.
-    timeout-minutes: 90
+    # it is slow by design: one listing request per community per window at 30s
+    # spacing, plus a metadata lookup for every game that has not been seen
+    # before. The curated set is eighteen communities across four windows, which
+    # is over half an hour of listings alone before enrichment, and a cold
+    # metadata cache adds most of an hour on top. Ninety minutes covered the
+    # four-community seed set and would now cut a cold run off partway.
+    timeout-minutes: 300
 
     steps:
       - uses: actions/checkout@v4

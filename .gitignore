@@ -24,6 +24,8 @@ coverage/
 # Local ingest output and cached source payloads never belong in this repo.
 data/corpus/
 data/cache/
+# A dry run writes here so it can never replace the published corpus.
+data/dry-run/
 *.corpus.json
 
 # Recorded fixtures are committed deliberately; ignore raw scratch captures

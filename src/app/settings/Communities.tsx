@@ -4,7 +4,7 @@ import { parseCommunityInput } from '../state/local.js';
 import { sourceLabel } from '../labels.js';
 import type { CommunityRef } from '../../communities/catalogue.js';
 import type { ReaderState } from '../state/local.js';
-import type { AdhocState } from '../App.js';
+import type { AdhocState } from '../adhoc/client.js';
 
 export interface CommunitiesProps {
   state: ReaderState;

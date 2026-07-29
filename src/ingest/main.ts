@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runIngest, AllSourcesFailedError } from './run.js';
 import { writeRunReport, summarizeRunReport } from './report.js';
+import { runPaths } from './paths.js';
 import { REDDIT_COMMUNITIES, LEMMY_COMMUNITIES, LEMMY_INSTANCE, INGEST_WINDOWS } from './communities.js';
 import { createRedditClient } from '../sources/reddit.js';
 import { createLemmyClient } from '../sources/lemmy.js';
@@ -17,8 +18,7 @@ import type { SourceItem } from '../corpus/schema.js';
 
 const DRY = process.argv.includes('--dry');
 const CACHE_DIR = 'data/cache';
-const OUT_DIR = process.env.GRS_OUT_DIR ?? 'public';
-const REPORT_PATH = process.env.GRS_REPORT_PATH ?? 'data/run-report.json';
+const { outDir: OUT_DIR, reportPath: REPORT_PATH } = runPaths(DRY, process.env);
 
 function loadCatalogue(): CatalogueEntry[] {
   if (!existsSync(CACHE_DIR)) return [];
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   console.log(`dictionary: ${dictionary.entries.length} entries from ${catalogue.length} rows`);
 
   if (DRY) {
-    console.log('dry run: no source will be contacted');
+    console.log(`dry run: no source will be contacted, writing to ${OUT_DIR}`);
   }
 
   const adapters = DRY ? [] : [redditAdapter(), lemmyAdapter(), itchAdapter()];

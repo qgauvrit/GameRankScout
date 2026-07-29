@@ -3,7 +3,7 @@ import { Communities } from './Communities.js';
 import type { Corpus } from '../../corpus/schema.js';
 import type { ReaderState } from '../state/local.js';
 import type { CommunityRef } from '../../communities/catalogue.js';
-import type { AdhocState } from '../App.js';
+import type { AdhocState } from '../adhoc/client.js';
 
 export interface SettingsProps {
   state: ReaderState;

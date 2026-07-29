@@ -224,7 +224,11 @@ function json(body: unknown, status: number): Response {
       // The app is the only caller, but it is served from a different origin
       // than this function, so the response has to say so.
       'access-control-allow-origin': '*',
-      'cache-control': `public, max-age=${Math.floor(CACHE_TTL_MS / 1000)}`,
+      // Only successes are cacheable. Caching a rejection would leave a reader
+      // who mistyped a community name looking at the same error for five
+      // minutes after they fixed it.
+      'cache-control':
+        status === 200 ? `public, max-age=${Math.floor(CACHE_TTL_MS / 1000)}` : 'no-store',
     },
   });
 }

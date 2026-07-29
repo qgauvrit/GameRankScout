@@ -18,6 +18,7 @@ import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
 import type { CommunityRef } from '../communities/catalogue.js';
+import type { AdhocState } from './adhoc/client.js';
 
 const CORPUS_URL = '/corpus.json';
 
@@ -25,12 +26,6 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; loaded: LoadedCorpus }
   | { status: 'unavailable'; error: unknown };
-
-/** How the on-demand pull for one added community is going. */
-export type AdhocState =
-  | { status: 'loading' }
-  | { status: 'merged'; added: number }
-  | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
 
 /**
  * Whether the device thinks it has a network.

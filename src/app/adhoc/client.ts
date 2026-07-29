@@ -2,6 +2,16 @@ import type { CommunityRef } from '../../communities/catalogue.js';
 import type { RankingWindow, SourceItem } from '../../corpus/schema.js';
 
 /**
+ * How the on-demand pull for one community is going. Lives here rather than
+ * beside the screen that renders it, so the settings components do not have to
+ * import a type back out of the app shell that renders them.
+ */
+export type AdhocState =
+  | { status: 'loading' }
+  | { status: 'merged'; added: number }
+  | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
+
+/**
  * Where the on-demand fetch function lives. Configured at build time because it
  * is a deployment detail, and defaulted to a same-origin path so a deployment
  * that routes `/adhoc` to the function needs no configuration at all.

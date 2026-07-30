@@ -153,3 +153,74 @@ describe('titles built entirely from ordinary words', () => {
     ]);
   });
 });
+
+/**
+ * The all-ordinary-words rule only fires when *every* token is common, so a
+ * title whose head noun is uncommon slipped through even though the phrase
+ * around it is plainly prose. Measured against a 19-community corpus, these
+ * were the shape of it: `The Front` was ranking first in the default view off
+ * "the front", and `The Bridge`, `The Lab`, `The Test` and `The Ball` were
+ * matched by lower-case prose on every single occurrence.
+ */
+describe('titles that are a determiner plus an ordinary noun', () => {
+  const catalogue = [
+    ...CATALOGUE,
+    { appid: 2285150, name: 'The Front', owners: '500,000 .. 1,000,000', positive: 9_000, negative: 6_000 },
+    { appid: 1293160, name: 'The Medium', owners: '1,000,000 .. 2,000,000', positive: 12_000, negative: 3_000 },
+    { appid: 204880, name: 'The Bridge', owners: '500,000 .. 1,000,000', positive: 4_000, negative: 500 },
+  ];
+  const dict = buildDictionary(catalogue, { aliases: ALIASES });
+  const found = (text: string) => extractMentions(text, dict).map((m) => m.name);
+
+  it('does not match a determiner-led title used as an ordinary phrase', () => {
+    expect(found('the enemy pushes hard on the front and you lose the position')).toEqual([]);
+    expect(found('you cross the bridge and the whole area opens up')).toEqual([]);
+    expect(found('the medium is the message, and here the message is tedium')).toEqual([]);
+  });
+
+  it('still matches those titles when they are written as titles', () => {
+    expect(found('The Front is a decent survival base builder if you like Rust.')).toEqual([
+      'The Front',
+    ]);
+    expect(found('I finally played The Medium and the dual-reality bit is great.')).toEqual([
+      'The Medium',
+    ]);
+  });
+
+  it('still matches them when quoted rather than capitalised', () => {
+    expect(found('picked up "the bridge" in a bundle')).toEqual(['The Bridge']);
+  });
+
+  it('leaves a longer determiner-led title alone, since prose does not run that long', () => {
+    // Determiner-led too, but a third token carries enough specificity that
+    // lower case is safe — and gating it would cost a mention people really write.
+    expect(found('the witcher 3 is still the best of them')).toEqual(['The Witcher 3: Wild Hunt']);
+  });
+});
+
+describe('catalogue entries that are not really game names', () => {
+  const catalogue = [
+    ...CATALOGUE,
+    { appid: 353380, name: 'Steam Link', owners: '5,000,000 .. 10,000,000', positive: 6_000, negative: 3_000 },
+    { appid: 1291340, name: 'Walking Simulator', owners: '200,000 .. 500,000', positive: 300, negative: 400 },
+  ];
+  const dict = buildDictionary(catalogue, { aliases: ALIASES });
+  const found = (text: string) => extractMentions(text, dict).map((m) => m.name);
+
+  it('does not read a posted store URL as a recommendation', () => {
+    // The shape that put this fourth in the default view: developers posting
+    // their own game, whose title is not the one that matched.
+    expect(found('I am making a survival driving game. Steam link: store page in bio')).toEqual([]);
+    expect(found('demo is out now, STEAM link below')).toEqual([]);
+  });
+
+  it('does not read a genre the reader is asking for as a game they named', () => {
+    expect(found('looking for a good walking simulator with a real ending')).toEqual([]);
+  });
+
+  it('still matches either when written as an actual title', () => {
+    expect(found('"Walking Simulator" is a real game and it is a joke about the genre')).toEqual([
+      'Walking Simulator',
+    ]);
+  });
+});

@@ -136,6 +136,19 @@ export const AMBIGUOUS_TITLES: ReadonlySet<string> = new Set([
   'no man',
   'the swapper',
   'the talos principle',
+
+  // Genre vocabulary that is also a catalogue title. Readers use these words to
+  // describe what they want, not to name a game — "looking for a walking
+  // simulator" is a request, not a recommendation.
+  'walking simulator',
+  'visual novel',
+  'battle royale',
+
+  // Platform products in the games catalogue. "Steam link" is overwhelmingly a
+  // developer posting the URL to their store page, which is exactly the shape
+  // of post the recommendation communities are full of.
+  'steam link',
+  'steam controller',
 ]);
 
 /**
@@ -172,9 +185,35 @@ const COMMON_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * True when a match needs capitalisation or quoting before it counts: either a
- * listed ordinary-English title, or a title every token of which is an ordinary
- * English word.
+ * Words that open a noun phrase. A title starting with one of these is a phrase
+ * before it is a name, which is what makes it collide with running prose.
+ */
+const DETERMINERS: ReadonlySet<string> = new Set(['the', 'a', 'an']);
+
+/**
+ * Above this length a determiner-led title stops reading as an incidental
+ * phrase. Every prose collision measured on a real corpus was exactly two
+ * tokens — "the front", "the bridge", "the medium", "the lab", "the test",
+ * "the ball" — because prose says those constantly. A third token is already
+ * enough specificity that lower case is safe: "the witcher 3" and "the long
+ * dark" are nobody's stray phrase, and gating them would cost real recall on
+ * the casual lower-case mentions people actually write.
+ */
+const DETERMINER_PHRASE_MAX_TOKENS = 2;
+
+/**
+ * True when a match needs capitalisation or quoting before it counts.
+ *
+ * Three shapes qualify: a listed ordinary-English title, a title every token of
+ * which is an ordinary English word, and a short title led by a determiner.
+ *
+ * That last rule exists because the second one is stricter than it looks —
+ * requiring *every* token to be common means a title is unguarded as soon as
+ * its head noun is uncommon, even when the phrase is plainly prose. `The Front`
+ * reached first place in the default view on lower-case "the front"; `The Lab`,
+ * `The Test` and `The Ball` were matched by prose on every occurrence they had.
+ * Enumerating those titles cannot work, because the next one is always a noun
+ * nobody listed — the determiner is the part that generalises.
  *
  * Marking a real title ambiguous only costs recall on lower-case mentions,
  * which is the cheap direction to be wrong in — precision is what is gated.
@@ -184,5 +223,7 @@ export function isAmbiguousTitle(normalized: string): boolean {
 
   const tokens = normalized.split(' ').filter(Boolean);
   if (tokens.length === 0) return false;
-  return tokens.every((token) => COMMON_WORDS.has(token));
+  if (tokens.every((token) => COMMON_WORDS.has(token))) return true;
+
+  return tokens.length <= DETERMINER_PHRASE_MAX_TOKENS && DETERMINERS.has(tokens[0]!);
 }

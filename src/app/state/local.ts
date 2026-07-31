@@ -110,6 +110,26 @@ export function parseCommunityInput(raw: string): CommunityRef | null {
   return null;
 }
 
+/**
+ * Communities whose evidence must not count, as ranking's `disabledCommunities`
+ * expects them.
+ *
+ * Two different reasons land here. A curated community is on until the reader
+ * switches it off. A recommended one is the reverse: the ingest sweeps the whole
+ * catalogue, because a scheduled job cannot see which communities a particular
+ * reader opted into — so its evidence is in the corpus either way, and the
+ * opt-in is what decides whether it counts. Expressing both as one exclusion
+ * list is what makes switching a recommended community on take effect against
+ * the corpus already loaded, instead of after the next run.
+ */
+export function excludedCommunities(state: ReaderState): string[] {
+  const notOptedIn = RECOMMENDED_COMMUNITIES.filter(
+    (community) => !state.enabledRecommended.includes(community.id),
+  ).map((community) => community.id);
+
+  return [...new Set([...state.disabledCommunities, ...notOptedIn])];
+}
+
 /** Every community that should currently contribute, in catalogue order. */
 export function activeCommunities(state: ReaderState): CommunityRef[] {
   const opted = RECOMMENDED_COMMUNITIES.filter((community) =>

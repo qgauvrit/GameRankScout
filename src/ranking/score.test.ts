@@ -508,4 +508,32 @@ describe('purity (R29)', () => {
 
     expect(ranked[0]!.contributing).toEqual([scoring]);
   });
+
+  it('computes momentum from the evidence that counts, not the corpus-level weights', () => {
+    // Published weights are baked over every record, so a reader switching a
+    // source off still had its momentum applied.
+    const games = [
+      game({
+        id: 'a',
+        windowWeights: { week: 5, month: 0, sixMonths: 0, year: 5 },
+        evidence: [
+          evidence({ community: 'r/a', window: 'week', source: 'lemmy' }),
+          evidence({ community: 'r/a', window: 'year' }),
+        ],
+      }),
+    ];
+
+    const withLemmy = rankGames(games, { mode: 'breakout', window: 'week', now: NOW });
+    expect(withLemmy).toHaveLength(1);
+
+    // Drop the source carrying the only recent evidence: there is now nothing
+    // in the recent window, so the game leaves the Breakout ranking entirely.
+    const withoutLemmy = rankGames(games, {
+      mode: 'breakout',
+      window: 'week',
+      now: NOW,
+      enabledSources: ['reddit'],
+    });
+    expect(withoutLemmy).toHaveLength(0);
+  });
 });

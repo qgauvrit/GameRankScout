@@ -148,16 +148,31 @@ export function createHttpEnrichers(
    * run for no benefit to anyone.
    */
   const lastRequestByHost = new Map<string, number>();
+  /**
+   * One queue per host. Reserving a slot has to be atomic: reading the last
+   * timestamp, awaiting, and only then writing it means two concurrent callers
+   * read the same value, sleep the same interval and fire together — and
+   * resolving one game issues two same-host lookups in parallel, so that was
+   * every game of every run.
+   */
+  const queueByHost = new Map<string, Promise<void>>();
+
+  function reserveSlot(host: string): Promise<void> {
+    const slot = (queueByHost.get(host) ?? Promise.resolve()).then(async () => {
+      const last = lastRequestByHost.get(host);
+      if (last !== undefined) {
+        const elapsed = nowImpl() - last;
+        if (elapsed < minIntervalMs) await sleepImpl(minIntervalMs - elapsed);
+      }
+      lastRequestByHost.set(host, nowImpl());
+    });
+    queueByHost.set(host, slot.catch(() => undefined));
+    return slot;
+  }
 
   async function getJson(url: string): Promise<unknown | null> {
     const host = new URL(url).host;
-
-    const last = lastRequestByHost.get(host);
-    if (last !== undefined) {
-      const elapsed = nowImpl() - last;
-      if (elapsed < minIntervalMs) await sleepImpl(minIntervalMs - elapsed);
-    }
-    lastRequestByHost.set(host, nowImpl());
+    await reserveSlot(host);
 
     try {
       const response = await fetchImpl(url, {

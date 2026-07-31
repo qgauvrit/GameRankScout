@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { sourceItemSchema } from '../../corpus/schema.js';
 import type { CommunityRef } from '../../communities/catalogue.js';
 import type { RankingWindow, SourceItem } from '../../corpus/schema.js';
 
@@ -67,9 +69,15 @@ export async function fetchAdhocCommunity(
   if (!response.ok) throw new AdhocUnavailableError('unreachable', response.status);
 
   try {
-    const body = (await response.json()) as { items?: SourceItem[] };
-    return body.items ?? [];
-  } catch {
+    const body = (await response.json()) as { items?: unknown };
+    // Parsed, not cast. These values become outbound links and are read by the
+    // merge, and the schema is where the http(s)-only URL constraint lives — a
+    // cast would route around the one control that enforces it.
+    const parsed = z.array(sourceItemSchema).safeParse(body?.items ?? []);
+    if (!parsed.success) throw new AdhocUnavailableError('unreachable', response.status);
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof AdhocUnavailableError) throw error;
     // A deployment with no function routed at this path answers with the app's
     // own index.html, which is a 200 that is not JSON. That is "no ad-hoc path
     // here", not a broken community.

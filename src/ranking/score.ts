@@ -2,7 +2,13 @@ import { RANKING_MODES } from './modes.js';
 import { threadMagnitudes } from './magnitude.js';
 import { communityMatches } from '../communities/catalogue.js';
 import type { ModePreset, RankingMode } from './modes.js';
-import type { EvidenceRecord, GameEntry, RankingWindow, SourceId } from '../corpus/schema.js';
+import type {
+  EvidenceRecord,
+  GameEntry,
+  RankingWindow,
+  SourceId,
+  WindowWeights,
+} from '../corpus/schema.js';
 
 /**
  * Reciprocal-rank-fusion constant. Large enough that the top few positions are
@@ -119,6 +125,20 @@ function freshnessDecay(
 }
 
 /**
+ * Per-window weight over a set of evidence records, using the same reciprocal
+ * rank the corpus builder uses — so a momentum ratio computed here means the
+ * same thing as one computed from the published weights, just over the subset
+ * the reader's source and community choices left standing.
+ */
+function windowWeightsOf(records: EvidenceRecord[]): WindowWeights {
+  const weights: WindowWeights = { week: 0, month: 0, sixMonths: 0, year: 0 };
+  for (const record of records) {
+    weights[record.window] += 1 / (RRF_K + record.rankPosition);
+  }
+  return weights;
+}
+
+/**
  * Recent-window weight over historical-window weight, computed inside a single
  * run (KTD12).
  *
@@ -188,9 +208,14 @@ function scoreGame(
 
   let momentum = 1;
   if (preset.momentumWeight > 0 && preset.momentum) {
+    // Recomputed from the evidence that actually counts, not the corpus-level
+    // weights. Those are baked over every record, so a reader who switched a
+    // source off still had its momentum applied — and Reddit is 5307 of 5358
+    // records, so "off" would have changed almost nothing about Breakout.
+    const weights = windowWeightsOf(available);
     const ratio = momentumRatio(
-      game.windowWeights[preset.momentum.recent],
-      game.windowWeights[preset.momentum.historical],
+      weights[preset.momentum.recent],
+      weights[preset.momentum.historical],
     );
     // log1p keeps a maximum-rise game ahead without letting it dwarf everything.
     momentum = (1 + Math.log1p(ratio)) ** preset.momentumWeight;

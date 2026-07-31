@@ -7,6 +7,7 @@ import { frequentTags } from './filters/tags.js';
 import { Settings } from './settings/Settings.js';
 import {
   DEFAULT_READER_STATE,
+  excludedCommunities,
   loadReaderState,
   localReaderStore,
   saveReaderState,
@@ -104,15 +105,21 @@ export function App() {
       setAdhoc((current) => ({ ...current, [community.id]: { status: 'loading' } }));
       try {
         const items = await fetchAdhocCommunity(community, reader.filters.window);
-        const merged = mergeAdhocItems(corpus, items);
-        setState((current) =>
-          current.status === 'ready'
-            ? { ...current, loaded: { ...current.loaded, corpus: merged.corpus } }
-            : current,
-        );
+        // Merge against whatever the corpus is *now*, not the one captured when
+        // this pull started. Two overlapping pulls both built on the same
+        // snapshot and the second silently discarded the first, while still
+        // reporting the mentions it had dropped. mergeAdhocItems is pure and
+        // dedupes on evidence key, so composing inside the updater is safe.
+        let added = 0;
+        setState((current) => {
+          if (current.status !== 'ready') return current;
+          const merged = mergeAdhocItems(current.loaded.corpus, items);
+          added = merged.added;
+          return { ...current, loaded: { ...current.loaded, corpus: merged.corpus } };
+        });
         setAdhoc((current) => ({
           ...current,
-          [community.id]: { status: 'merged', added: merged.added },
+          [community.id]: { status: 'merged', added },
         }));
       } catch (error) {
         setAdhoc((current) => ({
@@ -136,7 +143,7 @@ export function App() {
     () =>
       applyRanking(corpus?.games ?? [], reader.filters, {
         enabledSources: reader.enabledSources,
-        disabledCommunities: reader.disabledCommunities,
+        disabledCommunities: excludedCommunities(reader),
         dismissedGameIds: reader.dismissedGameIds,
       }),
     [corpus, reader],

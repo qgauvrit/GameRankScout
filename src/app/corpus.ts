@@ -1,6 +1,7 @@
 import {
   parseCorpus,
   CorpusSchemaVersionError,
+  CorpusValidationError,
   SCHEMA_VERSION,
 } from '../corpus/schema.js';
 import type { Corpus } from '../corpus/schema.js';
@@ -79,7 +80,17 @@ export interface LoadCorpusOptions {
   url: string;
   store: CorpusStore;
   fetchImpl?: typeof fetch;
+  /** Bounds a stalled response so the cache fallback is actually reachable. */
+  timeoutMs?: number;
 }
+
+/**
+ * A response that never arrives is worse than one that fails: the cache
+ * fallback below only runs once the fetch settles, so without a bound a stalled
+ * network leaves the app on its loading state indefinitely rather than showing
+ * the last good ranking.
+ */
+export const CORPUS_FETCH_TIMEOUT_MS = 15_000;
 
 export interface LoadedCorpus {
   corpus: Corpus;
@@ -96,11 +107,14 @@ export interface LoadedCorpus {
  * partial read would be worse than a refetch.
  */
 export async function loadCorpus(options: LoadCorpusOptions): Promise<LoadedCorpus> {
-  const { url, store, fetchImpl = fetch } = options;
+  const { url, store, fetchImpl = fetch, timeoutMs = CORPUS_FETCH_TIMEOUT_MS } = options;
 
   let networkError: unknown = null;
   try {
-    const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
+    const response = await fetchImpl(url, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!response.ok) {
       throw new Error(`Corpus request failed with HTTP ${response.status}`);
     }
@@ -120,8 +134,18 @@ export async function loadCorpus(options: LoadCorpusOptions): Promise<LoadedCorp
       return { corpus: parseCorpus(cached), origin: 'cache' };
     } catch (error) {
       cacheError = error;
-      // A superseded or corrupt cache is cleared so it is not retried forever.
-      if (error instanceof CorpusSchemaVersionError || error instanceof Error) {
+      // Both remedies happen to be "discard", but they are different failures
+      // and the taxonomy exists to tell them apart: a version mismatch is an
+      // expected consequence of a deploy, corruption is worth knowing about.
+      // The old condition `instanceof CorpusSchemaVersionError || instanceof
+      // Error` was tautological — CorpusValidationError extends Error too — so
+      // the distinction was never actually drawn.
+      if (error instanceof CorpusSchemaVersionError) {
+        await store.clear();
+      } else if (error instanceof CorpusValidationError) {
+        console.warn('Discarding a corrupt cached corpus', error.issues);
+        await store.clear();
+      } else {
         await store.clear();
       }
     }

@@ -150,6 +150,26 @@ export class CommunityNotFoundError extends Error {
 
 const sharedCache = memoryCache();
 let lastRequestAt: number | null = null;
+/**
+ * Outbound requests queue behind one another. Reading `lastRequestAt`, awaiting,
+ * and only then writing it is not a mutex: concurrent invocations in one isolate
+ * read the same value, wait the same interval, and fire together — which is the
+ * opposite of pacing. Cloudflare may still run several isolates, so this bounds
+ * the burst rather than eliminating it.
+ */
+let outboundQueue: Promise<void> = Promise.resolve();
+
+function reserveSlot(now: () => number, sleep: (ms: number) => Promise<void>): Promise<void> {
+  const slot = outboundQueue.then(async () => {
+    if (lastRequestAt !== null) {
+      const elapsed = now() - lastRequestAt;
+      if (elapsed < MIN_INTERVAL_MS) await sleep(MIN_INTERVAL_MS - elapsed);
+    }
+    lastRequestAt = now();
+  });
+  outboundQueue = slot.catch(() => undefined);
+  return slot;
+}
 
 export async function fetchCommunity(
   source: string,
@@ -173,18 +193,22 @@ export async function fetchCommunity(
     return { ...hit.value, cached: true };
   }
 
-  if (lastRequestAt !== null) {
-    const elapsed = now() - lastRequestAt;
-    if (elapsed < MIN_INTERVAL_MS) await sleep(MIN_INTERVAL_MS - elapsed);
-  }
-  lastRequestAt = now();
+  await reserveSlot(now, sleep);
 
   const response = await fetchImpl(target.url, {
     headers: {
       'user-agent': userAgent,
       accept: target.source === 'reddit' ? 'application/atom+xml' : 'application/json',
     },
+    // The allowlist must bind the host actually contacted, not merely the first
+    // one asked. Following a redirect would let the upstream choose where this
+    // request ends up, which is exactly what composing the URL here prevents.
+    redirect: 'manual',
   });
+
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`${target.source} redirected off the allowlist`);
+  }
 
   if (response.status === 404) throw new CommunityNotFoundError(community);
   if (!response.ok) {

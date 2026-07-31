@@ -1,20 +1,27 @@
-import { CURATED_COMMUNITIES } from '../communities/catalogue.js';
+import { COMMUNITY_CATALOGUE } from '../communities/catalogue.js';
 import type { RankingWindow } from '../corpus/schema.js';
 
 /**
- * The community set the scheduled ingest sweeps.
+ * The community set the scheduled ingest sweeps: the whole catalogue, both
+ * tiers.
  *
- * Drawn from the curated tier of the shared catalogue, so the communities the
- * app shows as on-by-default are exactly the ones the ingest actually visits —
- * a reader looking at an enabled community that no run ever swept would be
- * reading a lie. Each identifier is checked against the live source by
+ * The recommended tier is opt-in *for the reader*, not for the ingest. Reader
+ * opt-ins live in browser storage, which a scheduled server job cannot see — so
+ * sweeping only what someone has opted into is not a thing this architecture
+ * can do. Sweeping everything and letting the app filter is both simpler and
+ * better: switching a recommended community on takes effect immediately against
+ * the corpus already loaded, rather than after the next run. It is the same
+ * shape as every other reader control (KTD1).
+ *
+ * The cost is run length, which is why the workflow's timeout has the headroom
+ * it does. Each identifier is checked against the live source by
  * `npm run verify:communities`.
  */
-const DEFAULT_REDDIT_COMMUNITIES = CURATED_COMMUNITIES.filter(
+const DEFAULT_REDDIT_COMMUNITIES = COMMUNITY_CATALOGUE.filter(
   (community) => community.source === 'reddit',
 ).map((community) => community.id);
 
-const DEFAULT_LEMMY_COMMUNITIES = CURATED_COMMUNITIES.filter(
+const DEFAULT_LEMMY_COMMUNITIES = COMMUNITY_CATALOGUE.filter(
   (community) => community.source === 'lemmy',
 ).map((community) => community.id);
 

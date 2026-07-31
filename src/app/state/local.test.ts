@@ -7,6 +7,7 @@ import {
   parseCommunityInput,
   saveReaderState,
   toggleSource,
+  excludedCommunities,
 } from './local.js';
 import { CURATED_COMMUNITIES, RECOMMENDED_COMMUNITIES } from '../../communities/catalogue.js';
 import { SCHEMA_VERSION, SOURCE_IDS } from '../../corpus/schema.js';
@@ -131,5 +132,40 @@ describe('reading a community identifier the reader typed', () => {
 
   it('rejects a Reddit name longer than Reddit allows', () => {
     expect(parseCommunityInput(`r/${'a'.repeat(22)}`)).toBeNull();
+  });
+});
+
+describe('which communities count', () => {
+  it('excludes every recommended community until the reader opts in', () => {
+    // The ingest sweeps the whole catalogue because it cannot see a reader's
+    // opt-ins, so the opt-in is what decides whether the evidence counts.
+    const excluded = excludedCommunities(DEFAULT_READER_STATE);
+
+    for (const community of RECOMMENDED_COMMUNITIES) {
+      expect(excluded).toContain(community.id);
+    }
+    for (const community of CURATED_COMMUNITIES) {
+      expect(excluded).not.toContain(community.id);
+    }
+  });
+
+  it('stops excluding one the reader switched on', () => {
+    const opted = RECOMMENDED_COMMUNITIES[0]!;
+    const excluded = excludedCommunities({
+      ...DEFAULT_READER_STATE,
+      enabledRecommended: [opted.id],
+    });
+
+    expect(excluded).not.toContain(opted.id);
+  });
+
+  it('still excludes a curated community the reader switched off', () => {
+    const dropped = CURATED_COMMUNITIES[0]!;
+    const excluded = excludedCommunities({
+      ...DEFAULT_READER_STATE,
+      disabledCommunities: [dropped.id],
+    });
+
+    expect(excluded).toContain(dropped.id);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { buildDictionary } from './dictionary.js';
@@ -8,8 +8,8 @@ import { CURATED_ALIASES } from './aliases.js';
 import type { CatalogueEntry, Dictionary } from './dictionary.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cacheDir = resolve(here, '../../data/cache');
 const fixturePath = resolve(here, '../../test/fixtures/extract/labelled-comments.json');
+const cataloguePath = resolve(here, '../../test/fixtures/extract/catalogue.json');
 
 /**
  * Precision measured by hand-labelling every mention the extractor produced
@@ -44,24 +44,23 @@ interface LabelledRow {
  */
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as { rows: LabelledRow[] };
 
-function loadCatalogue(): CatalogueEntry[] {
-  if (!existsSync(cacheDir)) return [];
-  return readdirSync(cacheDir)
-    .filter((f) => f.startsWith('steamspy-page'))
-    .flatMap(
-      (f) => Object.values(JSON.parse(readFileSync(resolve(cacheDir, f), 'utf8'))) as CatalogueEntry[],
-    );
-}
-
-const catalogue = loadCatalogue();
 /**
- * The catalogue is a crawl artifact, not source code, so it is not committed.
- * Rebuild it with `npm run dictionary` — the gate is skipped without it rather
- * than silently passing on an empty dictionary.
+ * The catalogue this gate measures against is committed, not crawled.
+ *
+ * It used to read the gitignored crawl cache and skip itself when that was
+ * absent — which is every fresh checkout and every CI runner. A gate that
+ * disables itself when nobody is looking is not a gate, and this one was the
+ * only thing standing behind the extraction precision the whole product's
+ * quality rests on.
+ *
+ * The committed slice carries all 4,000 catalogue rows, reduced to the five
+ * fields `buildDictionary` reads, so it produces a dictionary identical to the
+ * live crawl's — the measured figure below still means what it says. Refresh it
+ * from `data/cache` after a `npm run dictionary` when the catalogue moves.
  */
-const hasCatalogue = catalogue.length > 0;
+const catalogue = JSON.parse(readFileSync(cataloguePath, 'utf8')) as CatalogueEntry[];
 
-describe.skipIf(!hasCatalogue)('mention extraction against the labelled fixture', () => {
+describe('mention extraction against the labelled fixture', () => {
   let dictionary: Dictionary;
 
   function build(): Dictionary {
@@ -112,6 +111,14 @@ describe.skipIf(!hasCatalogue)('mention extraction against the labelled fixture'
   it('covers a labelled fixture large enough to be worth gating on', () => {
     expect(fixture.rows.length).toBeGreaterThanOrEqual(50);
     expect(fixture.rows.filter((r) => r.expected.length === 0).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('measures against the full catalogue, not a slice that would flatter it', () => {
+    // Precision rises as the dictionary shrinks: fewer titles, fewer chances to
+    // match the wrong one. A truncated catalogue would leave this gate green
+    // while measuring something easier than production.
+    expect(catalogue.length).toBeGreaterThanOrEqual(4_000);
+    expect(build().entries.length).toBeGreaterThanOrEqual(3_500);
   });
 
   it('carries no author identity in the committed fixture', () => {

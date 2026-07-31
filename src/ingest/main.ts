@@ -95,7 +95,12 @@ function itchAdapter(): SourceAdapter {
     id: 'itch',
     communities: ['itch.io'],
     async collect() {
-      return client.fetchFeed('week');
+      const items = await client.fetchFeed('week');
+      // Same guard reddit and lemmy carry: a feed that returns 200 and parses to
+      // nothing is a broken source reporting success, and a source reporting
+      // success is what the run's refusal-to-publish guard keys off.
+      if (items.length === 0) throw new Error('itch.io returned no usable items');
+      return items;
     },
   };
 }

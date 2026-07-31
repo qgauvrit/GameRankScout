@@ -34,8 +34,8 @@ export interface IngestDeps {
 export class AllSourcesFailedError extends Error {
   readonly report: RunReport;
 
-  constructor(report: RunReport) {
-    super('Every source failed; refusing to publish an empty corpus over a good one');
+  constructor(report: RunReport, message = 'Every source failed; refusing to publish an empty corpus over a good one') {
+    super(message);
     this.name = 'AllSourcesFailedError';
     this.report = report;
   }
@@ -103,6 +103,27 @@ export async function runIngest(deps: IngestDeps): Promise<RunReport> {
   }
 
   const games = await enrichGames(evidence, deps.enrich);
+
+  // The all-sources-failed guard above is not enough on its own: one source
+  // reporting success with nothing usable satisfies it while still producing a
+  // corpus with no games, which then replaces a good one. Publishing is the
+  // destructive step, so the floor belongs here rather than in each adapter —
+  // this covers sources that do not exist yet.
+  if (games.length === 0) {
+    throw new AllSourcesFailedError(
+      {
+        startedAt,
+        finishedAt: deps.now(),
+        ok: false,
+        sources,
+        games: 0,
+        evidence: evidence.length,
+        corpusBytes: 0,
+      },
+      'Run produced no games; refusing to publish an empty corpus over a good one',
+    );
+  }
+
   const corpus = buildCorpus(games, sources, { now: startedAt });
   const published = deps.publish(corpus);
 

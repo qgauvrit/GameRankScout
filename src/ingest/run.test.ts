@@ -115,15 +115,31 @@ describe('ingest run', () => {
     expect(report.sources.find((s) => s.source === 'reddit')?.ok).toBe(true);
   });
 
-  it('still completes and publishes when a run produces no new evidence', async () => {
+  it('reports a run that produced nothing, without publishing over a good corpus', async () => {
+    // A source can succeed and still yield nothing usable, which satisfies the
+    // every-source-failed guard while producing a corpus with no games. The
+    // heartbeat KTD6 needs is the run *report*, not a published corpus, so this
+    // still produces a report — and refuses to publish.
     const d = deps({ adapters: [adapter('reddit', [])] });
+
+    const error = await runIngest(d).then(
+      () => null,
+      (e: unknown) => e as AllSourcesFailedError,
+    );
+
+    expect(error).toBeInstanceOf(AllSourcesFailedError);
+    expect(d.published).toHaveLength(0);
+    expect(error?.report.games).toBe(0);
+    expect(error?.report.ok).toBe(false);
+    expect(error?.message).toMatch(/no games/i);
+  });
+
+  it('publishes as soon as the run produced at least one game', async () => {
+    const d = deps({ adapters: [adapter('reddit', [item({ community: 'r/a' })])] });
 
     const report = await runIngest(d);
 
     expect(report.ok).toBe(true);
-    expect(report.games).toBe(0);
-    // The run report is what keeps the schedule alive, so an empty run must
-    // still produce one (KTD6).
     expect(d.published).toHaveLength(1);
   });
 
@@ -154,7 +170,9 @@ describe('ingest run', () => {
 
   it('carries no source content into the run report', async () => {
     const d = deps({
-      adapters: [adapter('reddit', [item({ text: 'SECRET BODY TEXT that must not leak' })])],
+      adapters: [
+        adapter('reddit', [item({ text: 'Tunic is wonderful. SECRET BODY TEXT that must not leak' })]),
+      ],
     });
 
     const report = await runIngest(d);

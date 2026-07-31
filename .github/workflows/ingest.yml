@@ -77,6 +77,26 @@ jobs:
         if: success()
         run: npm run build
 
+      # Uploaded before the commit, and keyed off the ingest step rather than
+      # overall job success. A run can sweep for an hour, publish a good corpus,
+      # and then lose a push race against a concurrent commit — the artifacts it
+      # produced are still good, and are the whole point of the run.
+      - name: Upload corpus as a deployment artifact
+        if: steps.ingest.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus
+          path: public/corpus.json
+          retention-days: 7
+
+      - name: Upload built site
+        if: steps.ingest.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 7
+
       # The commit is the heartbeat. The host disables a schedule after 60 days
       # without repository activity and sends no notification when a run is
       # skipped, so every run commits its report — including a run that produced
@@ -93,7 +113,17 @@ jobs:
           else
             git commit -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
           fi
-          git push
+          # The checkout can be hours old by now, so rebase onto whatever landed
+          # meanwhile rather than losing the heartbeat to a non-fast-forward.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
+          done
+          echo "::error::Could not push the run report after 3 attempts."
+          exit 1
 
       # A corpus in the working tree would mean the publish target stopped being
       # ignored, which is the one way source-derived data could reach the
@@ -110,19 +140,3 @@ jobs:
             echo "::error::public/corpus.json is tracked; the corpus must never be committed."
             exit 1
           fi
-
-      - name: Upload corpus as a deployment artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: corpus
-          path: public/corpus.json
-          retention-days: 7
-
-      - name: Upload built site
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: dist
-          retention-days: 7

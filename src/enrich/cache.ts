@@ -51,16 +51,34 @@ export function fileCache(
   }
 
   let dirty = false;
+  let unflushed = 0;
 
   const flush = () => {
     if (!dirty) return;
     mkdirSync(resolve(absolute, '..'), { recursive: true });
     writeFileSync(absolute, JSON.stringify(store));
     dirty = false;
+    unflushed = 0;
   };
 
-  // Flushing on exit keeps the hot path free of disk writes.
+  /**
+   * Flushing only at exit kept the hot path free of disk writes, but an ingest
+   * run is paced across more than an hour and is killed rather than drained
+   * whenever it hits the workflow timeout — which discarded every lookup it had
+   * made and guaranteed the next run started cold. Checkpointing bounds that
+   * loss to the last few writes while still keeping the disk out of the way.
+   */
+  const FLUSH_EVERY = 25;
+
   process.once('beforeExit', flush);
+  // A killed run never reaches `beforeExit`, so catch the signals a runner
+  // actually sends. `once` keeps the default exit behaviour intact.
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      flush();
+      process.exit(signal === 'SIGINT' ? 130 : 143);
+    });
+  }
 
   return {
     async get<T>(key: string) {
@@ -72,6 +90,8 @@ export function fileCache(
     async set<T>(key: string, value: T) {
       store[key] = { storedAt: now(), value };
       dirty = true;
+      unflushed += 1;
+      if (unflushed >= FLUSH_EVERY) flush();
     },
   };
 }

@@ -349,7 +349,7 @@ describe('app shell', () => {
     await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(await screen.findByText(/1 mention added to this session/i)).toBeInTheDocument();
+    expect(await screen.findByText(/1 mention added/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /done/i }));
     expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(

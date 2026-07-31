@@ -31,7 +31,7 @@ function adhocNote(state: AdhocState | undefined, covered: boolean): string {
       return ' · fetching it now';
     case 'merged':
       return state.added > 0
-        ? ` · ${state.added} ${state.added === 1 ? 'mention' : 'mentions'} added to this session`
+        ? ` · ${state.added} ${state.added === 1 ? 'mention' : 'mentions'} added`
         : ' · fetched, but nothing it discussed is in this corpus yet';
     case 'failed':
       return state.reason === 'not_found'

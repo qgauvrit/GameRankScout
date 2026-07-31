@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadCorpus, localStorageStore, CorpusUnavailableError } from './corpus.js';
 import { Ranking } from './views/Ranking.js';
 import { FilterBar } from './filters/FilterBar.js';
@@ -15,6 +15,7 @@ import {
 import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
 import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
+import { RANKING_WINDOWS } from '../corpus/schema.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
@@ -99,12 +100,28 @@ export function App() {
    * the offline cache: what a reload restores to should be the published
    * corpus, not one session's additions.
    */
+  /** Communities already fetched for the loaded corpus, so nothing pulls twice. */
+  const pulled = useRef<Set<string>>(new Set());
+
   const pullCommunity = useCallback(
     async (community: CommunityRef) => {
       if (!corpus) return;
+      const pullKey = `${corpus.generatedAt}:${community.id}`;
+      if (pulled.current.has(pullKey)) return;
+      pulled.current.add(pullKey);
       setAdhoc((current) => ({ ...current, [community.id]: { status: 'loading' } }));
       try {
-        const items = await fetchAdhocCommunity(community, reader.filters.window);
+        // Every window, not just the selected one: a community that contributes
+        // to the past week and vanishes when the reader switches to the past
+        // year is not really in the ranking, it is in one view of it.
+        const settled = await Promise.allSettled(
+          RANKING_WINDOWS.map((window) => fetchAdhocCommunity(community, window)),
+        );
+        const failure = settled.find((r) => r.status === 'rejected');
+        // Only a total failure is a failure: a community may genuinely have
+        // nothing in one window while being active in another.
+        if (failure && settled.every((r) => r.status === 'rejected')) throw failure.reason;
+        const items = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
         // Merge against whatever the corpus is *now*, not the one captured when
         // this pull started. Two overlapping pulls both built on the same
         // snapshot and the second silently discarded the first, while still
@@ -131,8 +148,25 @@ export function App() {
         }));
       }
     },
-    [corpus, reader.filters.window],
+    [corpus],
   );
+
+  /**
+   * Re-pull the reader's own communities whenever a corpus loads.
+   *
+   * The merge is deliberately never written to the offline cache — a reload
+   * should restore the published corpus, not one session's additions — which
+   * meant an added community worked once and then quietly stopped counting.
+   * Fetching again on load is what makes it durable without inventing
+   * server-side per-reader state: the addition persists, and its evidence is
+   * rebuilt from the source each time.
+   */
+  useEffect(() => {
+    if (!corpus) return;
+    // pullCommunity de-duplicates per corpus generation, so a community the
+    // reader just added by hand is not fetched a second time here.
+    for (const community of reader.addedCommunities) void pullCommunity(community);
+  }, [corpus, reader.addedCommunities, pullCommunity]);
 
   const tags = useMemo(() => frequentTags(corpus?.games ?? []), [corpus]);
 

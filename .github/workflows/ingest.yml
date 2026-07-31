@@ -2,10 +2,12 @@ name: Ingest
 
 on:
   schedule:
-    # Twice daily. Scheduled runs are delayed 5-30 minutes under load and are
-    # silently skipped when the runner is busy, so the cadence is deliberately
-    # more frequent than the freshness the product actually needs.
-    - cron: '17 5,17 * * *'
+    # Once daily. A full sweep is ~2.5 hours of paced requests across 37
+    # communities, so twice daily was five hours of runner time a day to refresh
+    # a corpus whose week window barely moves in twelve. Scheduled runs are also
+    # delayed 5-30 minutes under load and silently skipped when the runner is
+    # busy, which is what the run-report heartbeat exists to make visible (KTD6).
+    - cron: '17 5 * * *'
   workflow_dispatch:
     inputs:
       dictionary_pages:

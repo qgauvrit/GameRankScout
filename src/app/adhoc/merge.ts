@@ -104,8 +104,18 @@ export function mergeAdhocItems(
     const incoming = newRecords.get(game.id);
     if (!incoming) return game;
 
+    // Seeded with what the game already carries, then extended as records are
+    // accepted — so a batch that contains the same record twice contributes it
+    // once. Pulling every window at once makes that ordinary: a thread inside
+    // the six-month cutoff is legitimately returned by more than one window.
     const known = new Set(game.evidence.map(evidenceKey));
-    const fresh = incoming.filter((record) => !known.has(evidenceKey(record)));
+    const fresh: EvidenceRecord[] = [];
+    for (const record of incoming) {
+      const key = evidenceKey(record);
+      if (known.has(key)) continue;
+      known.add(key);
+      fresh.push(record);
+    }
     if (fresh.length === 0) return game;
 
     added += fresh.length;

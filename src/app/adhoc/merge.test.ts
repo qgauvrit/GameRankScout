@@ -112,6 +112,33 @@ describe('merging an on-demand community fetch', () => {
     expect(result.added).toBe(1);
   });
 
+  it('counts a record once even when the same batch carries it twice', () => {
+    // Every window is pulled at once, and a thread inside the six-month cutoff
+    // is legitimately returned by more than one of them. De-duplicating only
+    // against existing evidence appended one copy per window.
+    const loaded = corpus({ games: [known('steam:1', 'Stardew Valley')] });
+    const same = item({ text: 'Stardew Valley, every time.' });
+
+    const result = mergeAdhocItems(loaded, [same, same, same, same]);
+
+    expect(result.added).toBe(1);
+    expect(result.corpus.games[0]!.evidence).toHaveLength(2);
+  });
+
+  it('keeps the same thread once per window it genuinely appears in', () => {
+    const loaded = corpus({ games: [known('steam:1', 'Stardew Valley')] });
+    const base = { text: 'Stardew Valley, every time.' };
+
+    const result = mergeAdhocItems(loaded, [
+      item({ ...base, window: 'week' }),
+      item({ ...base, window: 'month' }),
+    ]);
+
+    // Different windows are different evidence — that is the cross-window
+    // presence magnitude is inferred from (KTD4), not a duplicate.
+    expect(result.added).toBe(2);
+  });
+
   it('does not duplicate evidence the corpus already carries', () => {
     const existing = evidence({
       community: 'r/cozygames',

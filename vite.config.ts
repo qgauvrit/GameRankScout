@@ -35,7 +35,14 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'worker/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'worker/**/*.test.ts',
+      // The fixtures themselves are checked for anything that should not be in
+      // a public repository, so this pattern has to reach outside src/.
+      'test/**/*.test.ts',
+    ],
     setupFiles: ['test/setup.ts'],
     environmentOptions: {
       // Without a real origin jsdom refuses to expose localStorage, and the

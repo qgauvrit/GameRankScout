@@ -37,8 +37,11 @@ describe('committed fixtures', () => {
     const leaks: string[] = [];
     for (const file of files) {
       const raw = readFileSync(file, 'utf8');
-      for (const match of raw.matchAll(/\/u\/[A-Za-z0-9_-]+/g)) {
-        if (match[0] !== '/u/redacted') leaks.push(`${file}: ${match[0]}`);
+      // Reddit names an author twice per entry and in two shapes: `/u/name` in
+      // the display name and `/user/name` in the profile URI. Checking only the
+      // first would have passed a fixture that still carried the second.
+      for (const match of raw.matchAll(/\/u(?:ser)?\/[A-Za-z0-9_-]+/g)) {
+        if (!/\/u(?:ser)?\/redacted$/.test(match[0])) leaks.push(`${file}: ${match[0]}`);
       }
       // Lemmy and itch name authors without the /u/ prefix.
       for (const match of raw.matchAll(/"(?:creator|author|username)"\s*:\s*"([^"]+)"/g)) {

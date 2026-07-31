@@ -1,0 +1,22 @@
+# Deployment manifest for the on-demand community fetch (U13, KTD7).
+#
+# The browser cannot reach any of GRS's sources directly — none of them send
+# cross-origin headers — so this function is what makes a reader-added community
+# usable before the next scheduled run. The app degrades without it (it says the
+# community will wait for the next run), so this is not on the critical path,
+# but a function that cannot be deployed is a function that never runs.
+#
+# The free tier's per-invocation CPU ceiling is the binding constraint the
+# handler is written against: it parses at most one page of entries and returns
+# fewer rather than failing.
+name = "gamerankscout-adhoc"
+main = "worker/adhoc.ts"
+compatibility_date = "2026-07-01"
+
+# No KV, no D1, no secrets. The handler holds a short-lived in-memory cache per
+# isolate and talks only to the hosts hard-coded in its allowlist, so there is
+# nothing here to configure and nothing to leak.
+workers_dev = true
+
+[observability]
+enabled = true

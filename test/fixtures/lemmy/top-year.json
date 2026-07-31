@@ -1,0 +1,124 @@
+{
+  "posts": [
+    {
+      "post": {
+        "id": 38010247,
+        "name": "Nearly 90% of Windows Games now run on Linux, latest data shows — as Windows 10 dies, gaming on Linux is more viable than ever",
+        "body": "Been playing Tunic all month. Genuinely did not expect the second half.",
+        "url": "https://www.tomshardware.com/software/linux/nearly-90-percent-of-windows-games-now-run-on-linux-latest-data-shows-as-windows-10-dies-gaming-on-linux-is-more-viable-than-ever",
+        "ap_id": "https://sh.itjust.works/post/48783126",
+        "published": "2025-10-28T23:17:20.115096Z",
+        "community_id": 2627,
+        "nsfw": false,
+        "removed": false,
+        "deleted": false,
+        "locked": false
+      },
+      "community": {
+        "id": 2627,
+        "name": "games",
+        "title": "Games",
+        "actor_id": "https://lemmy.world/c/games",
+        "local": true
+      },
+      "counts": {
+        "post_id": 38010247,
+        "comments": 365,
+        "score": 1476,
+        "upvotes": 1496,
+        "downvotes": 20,
+        "published": "2025-10-28T23:17:20.115096Z"
+      }
+    },
+    {
+      "post": {
+        "id": 48895880,
+        "name": "End of an era?",
+        "body": "Looking for something short and finished. No live service.",
+        "url": "https://discuss.online/pictrs/image/648f1ce9-5c52-446b-add1-a635341f6c40.jpeg",
+        "ap_id": "https://discuss.online/post/41998863",
+        "published": "2026-07-01T13:58:25.315483Z",
+        "community_id": 2627,
+        "nsfw": false,
+        "removed": false,
+        "deleted": false,
+        "locked": false
+      },
+      "community": {
+        "id": 2627,
+        "name": "games",
+        "title": "Games",
+        "actor_id": "https://lemmy.world/c/games",
+        "local": true
+      },
+      "counts": {
+        "post_id": 48895880,
+        "comments": 385,
+        "score": 1352,
+        "upvotes": 1361,
+        "downvotes": 9,
+        "published": "2026-07-01T13:58:25.315483Z"
+      }
+    },
+    {
+      "post": {
+        "id": 34746081,
+        "name": "It Turns Out, Steam’s Adult Content Ban Has Been Plotted For A Year And Is Spearheaded By One Of Project 2025’s Leading Voices",
+        "body": "",
+        "url": "https://www.thegamer.com/steams-adult-content-ban-has-been-plotted-for-a-year/",
+        "ap_id": "https://piefed.social/post/1168802",
+        "published": "2025-08-20T21:53:12.768308Z",
+        "community_id": 2627,
+        "nsfw": false,
+        "removed": false,
+        "deleted": false,
+        "locked": false
+      },
+      "community": {
+        "id": 2627,
+        "name": "games",
+        "title": "Games",
+        "actor_id": "https://lemmy.world/c/games",
+        "local": true
+      },
+      "counts": {
+        "post_id": 34746081,
+        "comments": 181,
+        "score": 1289,
+        "upvotes": 1304,
+        "downvotes": 15,
+        "published": "2025-08-20T21:53:12.768308Z"
+      }
+    },
+    {
+      "post": {
+        "id": 38707665,
+        "name": "Steam Hardware [new Steam Controller, Steam Machine, and VR headset Steam Frame, coming in 2026]",
+        "body": "Outer Wilds is the answer to basically every thread like this.",
+        "url": "https://store.steampowered.com/sale/hardware",
+        "ap_id": "https://lemmy.world/post/38707665",
+        "published": "2025-11-12T18:21:29.976842Z",
+        "community_id": 2627,
+        "nsfw": false,
+        "removed": false,
+        "deleted": false,
+        "locked": false
+      },
+      "community": {
+        "id": 2627,
+        "name": "games",
+        "title": "Games",
+        "actor_id": "https://lemmy.world/c/games",
+        "local": true
+      },
+      "counts": {
+        "post_id": 38707665,
+        "comments": 444,
+        "score": 1220,
+        "upvotes": 1232,
+        "downvotes": 12,
+        "published": "2025-11-12T18:21:29.976842Z"
+      }
+    }
+  ]
+}

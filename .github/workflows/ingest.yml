@@ -1,0 +1,144 @@
+name: Ingest
+
+on:
+  schedule:
+    # Once daily. A full sweep is ~2.5 hours of paced requests across 37
+    # communities, so twice daily was five hours of runner time a day to refresh
+    # a corpus whose week window barely moves in twelve. Scheduled runs are also
+    # delayed 5-30 minutes under load and silently skipped when the runner is
+    # busy, which is what the run-report heartbeat exists to make visible (KTD6).
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      dictionary_pages:
+        description: 'Catalogue pages to crawl (0 to skip the dictionary refresh)'
+        required: false
+        default: '0'
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    # A full sweep is paced to stay inside every source's rate limits (R7), so
+    # it is slow by design: one listing request per community per window at 30s
+    # spacing, plus a metadata lookup for every game that has not been seen
+    # before. The curated set is eighteen communities across four windows, which
+    # is over half an hour of listings alone before enrichment, and a cold
+    # metadata cache adds most of an hour on top. Ninety minutes covered the
+    # four-community seed set and would now cut a cold run off partway.
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The catalogue changes far more slowly than discussion does, so the
+      # dictionary is cached across runs and refreshed on demand rather than
+      # crawled every time.
+      - name: Restore catalogue and metadata cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: grs-cache-${{ github.run_id }}
+          restore-keys: |
+            grs-cache-
+
+      - name: Refresh dictionary
+        if: ${{ github.event.inputs.dictionary_pages != '' && github.event.inputs.dictionary_pages != '0' }}
+        env:
+          GRS_DICTIONARY_PAGES: ${{ github.event.inputs.dictionary_pages }}
+        run: npm run dictionary
+
+      - name: Seed dictionary if the cache was empty
+        run: |
+          if [ -z "$(ls data/cache/steamspy-page*.json 2>/dev/null)" ]; then
+            echo "No catalogue in cache; crawling the first pages."
+            GRS_DICTIONARY_PAGES=4 npm run dictionary
+          fi
+
+      - name: Ingest
+        id: ingest
+        env:
+          GRS_OUT_DIR: public
+          GRS_REPORT_PATH: data/run-report.json
+        run: npm run ingest
+
+      - name: Build app with the fresh corpus
+        if: success()
+        run: npm run build
+
+      # Uploaded before the commit, and keyed off the ingest step rather than
+      # overall job success. A run can sweep for an hour, publish a good corpus,
+      # and then lose a push race against a concurrent commit — the artifacts it
+      # produced are still good, and are the whole point of the run.
+      - name: Upload corpus as a deployment artifact
+        if: steps.ingest.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus
+          path: public/corpus.json
+          retention-days: 7
+
+      - name: Upload built site
+        if: steps.ingest.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 7
+
+      # The commit is the heartbeat. The host disables a schedule after 60 days
+      # without repository activity and sends no notification when a run is
+      # skipped, so every run commits its report — including a run that produced
+      # no new evidence, and a run that failed (KTD6).
+      - name: Commit run report
+        if: always()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/run-report.json
+          if git diff --cached --quiet; then
+            echo "Report unchanged; committing an empty commit to keep the schedule alive."
+            git commit --allow-empty -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
+          else
+            git commit -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
+          fi
+          # The checkout can be hours old by now, so rebase onto whatever landed
+          # meanwhile rather than losing the heartbeat to a non-fast-forward.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
+          done
+          echo "::error::Could not push the run report after 3 attempts."
+          exit 1
+
+      # A corpus in the working tree would mean the publish target stopped being
+      # ignored, which is the one way source-derived data could reach the
+      # repository (KTD11).
+      - name: Assert no corpus was committed
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Working tree is dirty after the run:"
+            git status --porcelain --untracked-files=no
+            exit 1
+          fi
+          if git ls-files --error-unmatch public/corpus.json >/dev/null 2>&1; then
+            echo "::error::public/corpus.json is tracked; the corpus must never be committed."
+            exit 1
+          fi

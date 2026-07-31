@@ -1,0 +1,34 @@
+{
+  "posts": [
+    {
+      "post": {
+        "id": 38010247,
+        "name": "Hollow Knight: Silksong thread",
+        "body": null,
+        "url": "https://www.tomshardware.com/software/linux/nearly-90-percent-of-windows-games-now-run-on-linux-latest-data-shows-as-windows-10-dies-gaming-on-linux-is-more-viable-than-ever",
+        "ap_id": "https://sh.itjust.works/post/48783126",
+        "published": "2025-10-28T23:17:20.115096Z",
+        "community_id": 2627,
+        "nsfw": false,
+        "removed": false,
+        "deleted": false,
+        "locked": false
+      },
+      "community": {
+        "id": 2627,
+        "name": "games",
+        "title": "Games",
+        "actor_id": "https://lemmy.world/c/games",
+        "local": true
+      },
+      "counts": {
+        "post_id": 38010247,
+        "comments": 365,
+        "score": 1476,
+        "upvotes": 1496,
+        "downvotes": 20,
+        "published": "2025-10-28T23:17:20.115096Z"
+      }
+    }
+  ]
+}

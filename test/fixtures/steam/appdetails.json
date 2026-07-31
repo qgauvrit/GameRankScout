@@ -1,0 +1,29 @@
+{
+  "553420": {
+    "success": true,
+    "data": {
+      "steam_appid": 553420,
+      "name": "TUNIC",
+      "type": "game",
+      "genres": [
+        {
+          "id": "1",
+          "description": "Action"
+        },
+        {
+          "id": "25",
+          "description": "Adventure"
+        },
+        {
+          "id": "3",
+          "description": "RPG"
+        }
+      ],
+      "platforms": {
+        "windows": true,
+        "mac": true,
+        "linux": false
+      }
+    }
+  }
+}

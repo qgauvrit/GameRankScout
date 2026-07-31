@@ -18,9 +18,25 @@ const COMMUNITY_PATTERN = /^r\/[A-Za-z0-9_]{2,21}(?:\+[A-Za-z0-9_]{2,21})*$/;
 const WINDOW_TOKENS: Record<RankingWindow, string> = {
   week: 'week',
   month: 'month',
-  sixMonths: 'year', // Reddit has no six-month window; the year listing is filtered by date.
+  sixMonths: 'year', // No six-month listing exists; see windowCutoff.
   year: 'year',
 };
+
+const SIX_MONTHS_MS = 182 * 24 * 60 * 60 * 1000;
+
+/**
+ * How far back a window reaches, for windows Reddit does not offer natively.
+ *
+ * Only `sixMonths` needs one: Reddit's tokens jump from month to year, so the
+ * six-month window is synthesized by fetching the year listing and dropping
+ * everything older. Without that cutoff the two windows returned byte-identical
+ * results, and because thread magnitude is inferred from how many windows a
+ * thread appears in (KTD4), every thread older than a month scored as if it had
+ * twice the reach it does.
+ */
+export function windowCutoff(window: RankingWindow, now: number): number | null {
+  return window === 'sixMonths' ? now - SIX_MONTHS_MS : null;
+}
 
 /** The source rejected the request — rate limiting, not a malformed one. */
 export class RedditRejectedError extends Error {
@@ -153,6 +169,11 @@ export interface ParseListingOptions {
   window: RankingWindow;
   /** Rank positions continue from here, so deep pages keep a global ordering. */
   rankOffset?: number;
+  /**
+   * Drop entries posted before this epoch, so a window Reddit does not offer
+   * can be synthesized from the next widest one it does.
+   */
+  notBefore?: number;
 }
 
 export interface ListingResult {
@@ -163,7 +184,7 @@ export interface ListingResult {
 }
 
 export function parseListingFeed(xml: string, options: ParseListingOptions): ListingResult {
-  const { window, rankOffset = 0 } = options;
+  const { window, rankOffset = 0, notBefore } = options;
   const doc = parser.parse(xml) as { feed?: Record<string, unknown> };
   const feed = doc.feed ?? {};
   const fallbackCommunity = feedCommunity(feed);
@@ -171,12 +192,23 @@ export function parseListingFeed(xml: string, options: ParseListingOptions): Lis
 
   const items: SourceItem[] = [];
   const communities = new Set<string>();
+  /**
+   * The cursor must be the last entry Reddit actually returned, not the last
+   * one kept — paging from a filtered-out entry would re-request the tail we
+   * just dropped, forever.
+   */
+  let lastSeenId: string | null = null;
 
-  entries.forEach((entry, index) => {
+  for (const entry of entries) {
     const id = typeof entry.id === 'string' ? entry.id : null;
     const permalink = entryHref(entry);
     const community = entryCommunity(entry, fallbackCommunity);
-    if (!id || !permalink || !community) return;
+    if (!id || !permalink || !community) continue;
+
+    lastSeenId = id;
+
+    const postedAt = normalizeTimestamp(entry);
+    if (notBefore !== undefined && Date.parse(postedAt) < notBefore) continue;
 
     const title = decodeEntities(nodeText(entry.title));
     const body = htmlToText(nodeText(entry.content));
@@ -187,19 +219,21 @@ export function parseListingFeed(xml: string, options: ParseListingOptions): Lis
       community,
       thread: { id, title, permalink },
       window,
-      rankPosition: rankOffset + index,
-      postedAt: normalizeTimestamp(entry),
+      // Position among the entries that survived the cutoff: this is a
+      // synthesized listing, so rank is where the entry sits in *it*.
+      rankPosition: rankOffset + items.length,
+      postedAt,
       kind: 'post',
       parentThreadId: null,
       // Title first: a recommendation thread often names the game in its title only.
       text: body ? `${title}\n\n${body}` : title,
     });
-  });
+  }
 
   return {
     items,
     communities: [...communities],
-    nextCursor: items.length > 0 ? (items[items.length - 1]?.thread.id ?? null) : null,
+    nextCursor: lastSeenId,
   };
 }
 
@@ -325,7 +359,12 @@ export function createRedditClient(options: RedditClientOptions = {}) {
       });
       if (opts.after) params.set('after', opts.after);
       const xml = await request(`${REDDIT_ORIGIN}/${community}/top/.rss?${params.toString()}`);
-      return parseListingFeed(xml, { window, rankOffset: opts.rankOffset ?? 0 });
+      const cutoff = windowCutoff(window, nowImpl());
+      return parseListingFeed(xml, {
+        window,
+        rankOffset: opts.rankOffset ?? 0,
+        ...(cutoff !== null ? { notBefore: cutoff } : {}),
+      });
     },
 
     async fetchComments(

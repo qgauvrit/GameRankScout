@@ -6,6 +6,7 @@ import {
   parseListingFeed,
   parseCommentFeed,
   createRedditClient,
+  windowCutoff,
   RedditRejectedError,
   REDDIT_PAGE_LIMIT,
 } from './reddit.js';
@@ -227,6 +228,68 @@ describe('reddit client pacing and rejection', () => {
     });
 
     await expect(client.fetchListing('r/doesnotexist', 'year')).rejects.toThrow(/404/);
+  });
+
+  it('synthesizes the six-month window rather than re-fetching the year', async () => {
+    // Reddit's tokens jump from month to year. Before the cutoff existed both
+    // windows returned byte-identical results, and because magnitude counts how
+    // many windows a thread appears in (KTD4), every thread older than a month
+    // scored as if it had twice the reach it really did.
+    const seen: string[] = [];
+    const client = createRedditClient({
+      fetchImpl: async (url) => {
+        seen.push(String(url));
+        return new Response(fixture('top-year.xml'), { status: 200 });
+      },
+      sleepImpl: async () => {},
+      nowImpl: () => Date.parse('2026-07-28T00:00:00.000Z'),
+    });
+
+    const year = await client.fetchListing('r/patientgamers', 'year');
+    const six = await client.fetchListing('r/patientgamers', 'sixMonths');
+
+    // Same request — Reddit has nothing narrower to ask for...
+    expect(seen[0]).toContain('t=year');
+    expect(seen[1]).toContain('t=year');
+    // ...so the narrowing has to happen here, and must actually narrow.
+    expect(six.items.length).toBeLessThan(year.items.length);
+    const cutoff = Date.parse('2026-07-28T00:00:00.000Z') - 182 * 24 * 60 * 60 * 1000;
+    for (const item of six.items) {
+      expect(Date.parse(item.postedAt)).toBeGreaterThanOrEqual(cutoff);
+    }
+  });
+
+  it('renumbers rank position over the entries that survive the cutoff', () => {
+    const cutoff = Date.parse('2026-07-01T00:00:00.000Z');
+    const { items } = parseListingFeed(fixture('top-year.xml'), {
+      window: 'sixMonths',
+      notBefore: cutoff,
+    });
+
+    // A synthesized listing's rank is position within *it*, not a sparse
+    // remnant of the listing it was cut from.
+    expect(items.map((i) => i.rankPosition)).toEqual(items.map((_, index) => index));
+  });
+
+  it('pages from the last entry seen, not the last entry kept', () => {
+    // Paging from a filtered-out entry would re-request the tail just dropped.
+    const all = parseListingFeed(fixture('top-year.xml'), { window: 'year' });
+    const filtered = parseListingFeed(fixture('top-year.xml'), {
+      window: 'sixMonths',
+      notBefore: Date.now() + 1, // drops everything
+    });
+
+    expect(filtered.items).toHaveLength(0);
+    expect(filtered.nextCursor).toBe(all.nextCursor);
+  });
+
+  it('only narrows the window Reddit cannot express', () => {
+    const now = Date.parse('2026-07-28T00:00:00.000Z');
+
+    expect(windowCutoff('sixMonths', now)).toBe(now - 182 * 24 * 60 * 60 * 1000);
+    for (const window of ['week', 'month', 'year'] as const) {
+      expect(windowCutoff(window, now)).toBeNull();
+    }
   });
 
   it('never composes a request from a community name it did not validate', async () => {

@@ -1,5 +1,6 @@
 import { RANKING_MODES } from './modes.js';
 import { threadMagnitudes } from './magnitude.js';
+import { communityMatches } from '../communities/catalogue.js';
 import type { ModePreset, RankingMode } from './modes.js';
 import type { EvidenceRecord, GameEntry, RankingWindow, SourceId } from '../corpus/schema.js';
 
@@ -144,7 +145,8 @@ function scoreGame(
 
   const counts = (record: EvidenceRecord): boolean =>
     (enabledSources === undefined || enabledSources.includes(record.source)) &&
-    (disabledCommunities === undefined || !disabledCommunities.includes(record.community));
+    (disabledCommunities === undefined ||
+      !disabledCommunities.some((id) => communityMatches(record.community, id)));
 
   const available = game.evidence.filter(counts);
   const relevant = available.filter((record) => record.window === window);

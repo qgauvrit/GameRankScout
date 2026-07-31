@@ -3,6 +3,7 @@ import {
   COMMUNITY_CATALOGUE,
   CURATED_COMMUNITIES,
   RECOMMENDED_COMMUNITIES,
+  communityMatches,
 } from './catalogue.js';
 import { TOP_LEVEL_GENRES } from '../app/filters/genres.js';
 import { assertValidCommunity } from '../sources/reddit.js';
@@ -52,6 +53,29 @@ describe('community catalogue', () => {
       } else {
         expect(() => assertValidLemmyCommunity(community.id)).not.toThrow();
       }
+    }
+  });
+
+  it('matches evidence against a catalogue id across both id spaces', () => {
+    // Reddit evidence carries the catalogue's own string; Lemmy evidence is
+    // qualified by the instance that served it. Comparing with === matched the
+    // first and silently never matched the second.
+    expect(communityMatches('r/patientgamers', 'r/patientgamers')).toBe(true);
+    expect(communityMatches('lemmy.world/c/games', 'games')).toBe(true);
+    // Enabling a community by name gets it from whichever instance federated it.
+    expect(communityMatches('beehaw.org/c/games', 'games')).toBe(true);
+
+    expect(communityMatches('r/patientgamers', 'r/truegaming')).toBe(false);
+    expect(communityMatches('lemmy.world/c/gaming', 'games')).toBe(false);
+    // A suffix that is not a community boundary must not match.
+    expect(communityMatches('lemmy.world/c/boardgames', 'games')).toBe(false);
+  });
+
+  it('matches every curated community against the id space its own source emits', () => {
+    for (const community of CURATED_COMMUNITIES) {
+      const asEmitted =
+        community.source === 'lemmy' ? `lemmy.world/c/${community.id}` : community.id;
+      expect(communityMatches(asEmitted, community.id)).toBe(true);
     }
   });
 

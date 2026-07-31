@@ -218,6 +218,11 @@ const DETERMINER_PHRASE_MAX_TOKENS = 2;
  * Marking a real title ambiguous only costs recall on lower-case mentions,
  * which is the cheap direction to be wrong in — precision is what is gated.
  */
+/** Whether a single word is ordinary English rather than a proper noun. */
+export function isCommonWord(word: string): boolean {
+  return COMMON_WORDS.has(word.toLowerCase().replace(/[^a-z]/gi, ''));
+}
+
 export function isAmbiguousTitle(normalized: string): boolean {
   if (AMBIGUOUS_TITLES.has(normalized)) return true;
 

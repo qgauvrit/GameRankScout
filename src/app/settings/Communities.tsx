@@ -9,8 +9,8 @@ import type { AdhocState } from '../adhoc/client.js';
 export interface CommunitiesProps {
   state: ReaderState;
   onChange: (next: ReaderState) => void;
-  /** Communities the loaded corpus actually contains evidence from. */
-  covered: Set<string>;
+  /** Whether the loaded corpus carries evidence from the community with this id. */
+  covered: (id: string) => boolean;
   /** How the on-demand pull is going, per community the reader added. */
   adhoc: Record<string, AdhocState>;
   onPull: (community: CommunityRef) => void;
@@ -140,7 +140,7 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
             key={community.id}
             community={community}
             checked={!state.disabledCommunities.includes(community.id)}
-            note={covered.has(community.id) ? '' : NOT_YET_SWEPT}
+            note={covered(community.id) ? '' : NOT_YET_SWEPT}
             onToggle={() => toggleDisabled(community.id)}
           />
         ))}
@@ -156,7 +156,7 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
               state.enabledRecommended.includes(community.id) &&
               !state.disabledCommunities.includes(community.id)
             }
-            note={covered.has(community.id) ? '' : NOT_YET_SWEPT}
+            note={covered(community.id) ? '' : NOT_YET_SWEPT}
             onToggle={() => toggleRecommended(community.id)}
           />
         ))}
@@ -170,7 +170,7 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
               key={community.id}
               community={community}
               checked={!state.disabledCommunities.includes(community.id)}
-              note={adhocNote(adhoc[community.id], covered.has(community.id))}
+              note={adhocNote(adhoc[community.id], covered(community.id))}
               onToggle={() => toggleDisabled(community.id)}
               onRemove={() =>
                 onChange({

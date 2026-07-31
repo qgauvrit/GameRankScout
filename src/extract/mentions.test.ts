@@ -198,6 +198,43 @@ describe('titles that are a determiner plus an ordinary noun', () => {
   });
 });
 
+describe('capitalisation that headline style already explains', () => {
+  const catalogue = [
+    ...CATALOGUE,
+    { appid: 304430, name: 'INSIDE', owners: '2,000,000 .. 5,000,000', positive: 60_000, negative: 2_000 },
+    { appid: 1716740, name: 'Starfield', owners: '5,000,000 .. 10,000,000', positive: 90_000, negative: 60_000 },
+  ];
+  const dict = buildDictionary(catalogue, { aliases: ALIASES });
+  const found = (text: string) => extractMentions(text, dict).map((m) => m.name);
+
+  it('does not read a Title-Case headline as title evidence', () => {
+    // Post titles are the dominant text the ingest sees, and a headline
+    // capitalises every word -- so "Inside" carries no more signal than "Storm".
+    expect(found('Any Recommendations For A Cozy Game To Play Inside During The Storm')).toEqual([]);
+  });
+
+  it('still reads a list of game names, which is not a headline', () => {
+    // Nearly every word capitalised, but they are names rather than ordinary
+    // vocabulary -- the most game-dense text there is.
+    expect(found("- Bioshock Infinite - Mirror's Edge - No Man's Sky - Starfield")).toContain(
+      'Starfield',
+    );
+  });
+
+  it('still accepts all-caps and quoting inside a headline', () => {
+    // Neither is explained by headline style, so both remain evidence.
+    expect(found('Best Games To Play When You Want A Short One Like INSIDE Or Limbo')).toContain(
+      'INSIDE',
+    );
+  });
+
+  it('leaves an unambiguous multi-word title alone in a headline', () => {
+    expect(found('Best Games Like Hollow Knight And Ori For A Long Weekend')).toContain(
+      'Hollow Knight',
+    );
+  });
+});
+
 describe('catalogue entries that are not really game names', () => {
   const catalogue = [
     ...CATALOGUE,

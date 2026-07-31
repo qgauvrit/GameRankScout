@@ -1,4 +1,5 @@
 import { normalizeTitle } from './dictionary.js';
+import { isCommonWord } from './stoplist.js';
 import type { Dictionary, DictionaryEntry } from './dictionary.js';
 
 export interface Mention {
@@ -136,6 +137,68 @@ function isTitleCased(surface: string): boolean {
   });
 }
 
+/** True when the surface is shouted — evidence no sentence position can fake. */
+function isAllCaps(surface: string): boolean {
+  return /[\p{Lu}]/u.test(surface) && surface === surface.toUpperCase();
+}
+
+/**
+ * Fraction of a line's words that start with a capital. A headline capitalises
+ * everything, so capitalisation inside one says nothing about any single word.
+ */
+const HEADLINE_CAPITALISED_SHARE = 0.7;
+const HEADLINE_MIN_WORDS = 4;
+
+/**
+ * How much ordinary English a line must contain before its capitalisation reads
+ * as headline style rather than as a run of proper nouns.
+ *
+ * Without this, a list of game titles — "Bioshock Infinite - Mirror's Edge -
+ * Mass Effect - No Man's Sky - Starfield" — looks exactly like a headline: many
+ * words, nearly all capitalised. It is the opposite, the most game-dense text
+ * there is, and treating it as a headline lost a real mention from the labelled
+ * sample. A headline capitalises ordinary vocabulary; a list capitalises names.
+ */
+const HEADLINE_COMMON_WORD_SHARE = 0.4;
+
+/**
+ * True when headline style already explains the surface's capitalisation.
+ *
+ * "Any Recommendations For A Cozy Game To Play Inside During The Storm"
+ * capitalises every word, so "Inside" carries no more signal than "Storm" does
+ * — and post titles are the dominant text the ingest sees, since the listing
+ * adapter prepends them to every item.
+ *
+ * Sentence-initial position is deliberately *not* treated the same way, though
+ * it explains capitalisation just as well. Rejecting it was tried and measured:
+ * it removed the false positives ("Rust never sleeps", "Journey to the shops")
+ * but also eleven mentions the labelled sample says are real, because a genuine
+ * recommendation opens a sentence with the game's name constantly ("The Front
+ * is a decent survival base builder"). Nothing separates the two cases
+ * syntactically — both are a capitalised subject followed by a verb — so the
+ * trade was rejected in favour of keeping recall. See the residual risk note in
+ * the precision harness.
+ *
+ * All-caps and quoting are unaffected: neither is explained by position.
+ */
+function capitalisationIsExplained(text: string, start: number, end: number): boolean {
+  const before = text.slice(0, start);
+  const lineStart = before.lastIndexOf('\n') + 1;
+  const lineEnd = text.indexOf('\n', end);
+  const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+  const words = line.split(/\s+/).filter((word) => /[\p{L}]/u.test(word));
+  if (words.length < HEADLINE_MIN_WORDS) return false;
+
+  const capitalised = words.filter((word) => {
+    const first = word[0]!;
+    return first === first.toUpperCase() && first !== first.toLowerCase();
+  });
+  if (capitalised.length / words.length < HEADLINE_CAPITALISED_SHARE) return false;
+
+  const ordinary = words.filter((word) => isCommonWord(word));
+  return ordinary.length / words.length >= HEADLINE_COMMON_WORD_SHARE;
+}
+
 export interface ExtractOptions {
   /** Overrides the default guard behaviour; used by the precision harness. */
   requireEvidenceForAmbiguous?: boolean;
@@ -201,7 +264,10 @@ export function extractMentions(
     const needsEvidence = candidate.entry.ambiguous || candidate.entry.tokens.length === 1;
     if (!needsEvidence) return true;
 
-    return isTitleCased(surface) || isQuoted(text, start, end);
+    if (isQuoted(text, start, end) || isAllCaps(surface)) return true;
+    // Mixed-case capitalisation only counts when the writer chose it: sentence
+    // position and headline style produce the same capitals for free.
+    return isTitleCased(surface) && !capitalisationIsExplained(text, start, end);
   });
 
   // Leftmost-longest: a longer title wins over a shorter one it contains.

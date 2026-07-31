@@ -1,5 +1,6 @@
 import { Sources } from './Sources.js';
 import { Communities } from './Communities.js';
+import { communityMatches } from '../../communities/catalogue.js';
 import type { Corpus } from '../../corpus/schema.js';
 import type { ReaderState } from '../state/local.js';
 import type { CommunityRef } from '../../communities/catalogue.js';
@@ -21,9 +22,13 @@ export interface SettingsProps {
  * reader cannot search for the game they hid.
  */
 export function Settings({ state, onChange, corpus, adhoc, onPull, onClose }: SettingsProps) {
-  const covered = new Set(
+  const coveredCommunities = new Set(
     corpus.games.flatMap((game) => game.evidence.map((record) => record.community)),
   );
+  // Evidence and catalogue speak different id spaces for Lemmy, so this is a
+  // match rather than a lookup (see communityMatches).
+  const covered = (id: string) =>
+    [...coveredCommunities].some((community) => communityMatches(community, id));
   const dismissed = corpus.games.filter((game) => state.dismissedGameIds.includes(game.id));
   // A dismissal for a game this corpus no longer carries is still real state,
   // just unnameable; counting it keeps the tally honest.

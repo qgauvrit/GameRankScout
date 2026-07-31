@@ -265,3 +265,22 @@ export const RECOMMENDED_COMMUNITIES = COMMUNITY_CATALOGUE.filter(
 export function findCommunity(id: string): CommunityRef | undefined {
   return COMMUNITY_CATALOGUE.find((community) => community.id === id);
 }
+
+/**
+ * Whether an evidence record's community is the one this catalogue id names.
+ *
+ * The two id spaces are deliberately different. Reddit evidence carries
+ * `r/name`, the same string the catalogue uses. Lemmy evidence carries
+ * `host/c/slug`, because a community only means something alongside the
+ * instance serving it — while the catalogue and the reader both speak the bare
+ * slug. Comparing them with `===` silently never matched, which left the
+ * reader's off-switch for every Lemmy community inert and its settings row
+ * permanently claiming it was not in the corpus.
+ *
+ * Matching on the suffix also means a reader who enables `games` gets it from
+ * whichever instance federated it, which is what enabling a community by name
+ * should mean.
+ */
+export function communityMatches(recordCommunity: string, id: string): boolean {
+  return recordCommunity === id || recordCommunity.endsWith(`/c/${id}`);
+}

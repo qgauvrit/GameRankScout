@@ -139,4 +139,25 @@ describe('lemmy client', () => {
 
     expect(now - before).toBeGreaterThanOrEqual(2000);
   });
+
+  it('backs off and retries a rate-limit rejection instead of failing the source', async () => {
+    // R7 requires every source to back off, not just Reddit. Before this, one
+    // 429 during an hour-long sweep failed the whole source.
+    let call = 0;
+    const client = createLemmyClient({
+      instance: 'https://lemmy.world',
+      fetchImpl: (async () =>
+        call++ === 0
+          ? new Response('', { status: 429 })
+          : new Response(fixture('top-year.json'), { status: 200 })) as unknown as typeof fetch,
+      sleepImpl: async () => {},
+      nowImpl: () => 0,
+      baseBackoffMs: 1,
+    });
+
+    const items = await client.fetchListing('games', 'year');
+
+    expect(items.length).toBeGreaterThan(0);
+    expect(client.rejections()).toBe(1);
+  });
 });

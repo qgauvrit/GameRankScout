@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { parseItchFeed } from './itch.js';
+import { parseItchFeed, createItchClient } from './itch.js';
 import { parseListingFeed } from './reddit.js';
 import { parseLemmyListing } from './lemmy.js';
 import { sourceItemKey } from './key.js';
@@ -106,5 +106,25 @@ describe('merging all three community sources', () => {
     );
 
     expect(sourceItemKey(a[0]!)).not.toBe(sourceItemKey(b[0]!));
+  });
+});
+
+describe('itch client', () => {
+  it('backs off and retries a rate-limit rejection instead of failing the source', async () => {
+    let call = 0;
+    const client = createItchClient({
+      fetchImpl: (async () =>
+        call++ === 0
+          ? new Response('', { status: 503 })
+          : new Response(fixture('itch', 'newest.xml'), { status: 200 })) as unknown as typeof fetch,
+      sleepImpl: async () => {},
+      nowImpl: () => 0,
+      baseBackoffMs: 1,
+    });
+
+    const items = await client.fetchFeed('week');
+
+    expect(items.length).toBeGreaterThan(0);
+    expect(client.rejections()).toBe(1);
   });
 });

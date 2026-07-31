@@ -1,4 +1,5 @@
 import type { RankingWindow, SourceItem } from '../corpus/schema.js';
+import { createPacedFetch } from './pacing.js';
 
 /**
  * Lemmy is the only community source that exposes real engagement figures, so
@@ -138,6 +139,8 @@ export interface LemmyClientOptions {
   sleepImpl?: (ms: number) => Promise<void>;
   nowImpl?: () => number;
   minIntervalMs?: number;
+  baseBackoffMs?: number;
+  maxRetries?: number;
   limit?: number;
   userAgent?: string;
 }
@@ -153,33 +156,29 @@ export function createLemmyClient(options: LemmyClientOptions) {
     userAgent = 'GameRankScout/0.1 (+https://github.com/qgauvrit/GameRankScout)',
   } = options;
 
-  let lastRequestAt: number | null = null;
+  const request = createPacedFetch({
+    source: 'Lemmy',
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    minIntervalMs,
+    ...(options.baseBackoffMs !== undefined ? { baseBackoffMs: options.baseBackoffMs } : {}),
+    ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+    headers: { 'user-agent': userAgent, accept: 'application/json' },
+  });
 
   return {
     async fetchListing(community: string, window: RankingWindow): Promise<SourceItem[]> {
       assertValidLemmyCommunity(community);
-
-      if (lastRequestAt !== null) {
-        const elapsed = nowImpl() - lastRequestAt;
-        if (elapsed < minIntervalMs) await sleepImpl(minIntervalMs - elapsed);
-      }
-      lastRequestAt = nowImpl();
 
       const params = new URLSearchParams({
         community_name: community,
         sort: LEMMY_SORTS[window],
         limit: String(limit),
       });
-      const response = await fetchImpl(`${instanceUrl.origin}/api/v3/post/list?${params}`, {
-        headers: { 'user-agent': userAgent, accept: 'application/json' },
-      });
-      if (!response.ok) {
-        throw new Error(`Lemmy request failed with HTTP ${response.status}`);
-      }
-      return parseLemmyListing(await response.text(), {
-        window,
-        instance: instanceUrl.origin,
-      });
+      const body = await request(`${instanceUrl.origin}/api/v3/post/list?${params}`);
+      return parseLemmyListing(body, { window, instance: instanceUrl.origin });
     },
+    rejections: request.rejections,
   };
 }

@@ -1,8 +1,11 @@
-import { XMLParser } from 'fast-xml-parser';
+import { createFeedParser, decodeEntities, nodeText, toArray } from './xml.js';
+import { createPacedFetch } from './pacing.js';
 import type { RankingWindow, SourceItem } from '../corpus/schema.js';
 
 /** Reddit caps a listing page at 100 entries; asking for more silently returns 100. */
 export const REDDIT_PAGE_LIMIT = 100;
+
+const parser = createFeedParser();
 
 const REDDIT_ORIGIN = 'https://www.reddit.com';
 
@@ -60,44 +63,10 @@ export function assertValidCommunity(community: string): void {
   }
 }
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  // Entity decoding is done by decodeEntities below, not by the parser.
-  // The parser aborts a document whose text nodes carry more than ~1000
-  // entities, which a real full-size feed routinely exceeds, and its
-  // entityExpansionLimit option does not lift that ceiling in v4. Decoding
-  // here was redundant anyway: Reddit double-escapes HTML inside XML, so the
-  // payload needs two decode passes regardless of what the parser does.
-  processEntities: false,
-  parseTagValue: false,
-  trimValues: true,
-});
-
-function toArray<T>(value: T | T[] | undefined | null): T[] {
-  if (value === undefined || value === null) return [];
-  return Array.isArray(value) ? value : [value];
-}
-
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: ' ',
-};
-
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/&([a-z]+);/gi, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
-}
 
 /**
- * Reddit wraps post and comment bodies in escaped HTML. Extraction reads plain
- * prose, so markup and entities are resolved here rather than at each call site.
+ * Reddit-specific: post bodies arrive as HTML escaped inside XML, so the text
+ * needs two decode passes with the markup stripped between them.
  */
 export function htmlToText(html: string): string {
   return decodeEntities(
@@ -110,20 +79,6 @@ export function htmlToText(html: string): string {
     .replace(/[ \t\u00A0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/**
- * An element carrying attributes (such as `<content type="html">`) is parsed as
- * an object with the text under `#text`, not as a bare string.
- */
-function nodeText(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value && typeof value === 'object') {
-    const text = (value as Record<string, unknown>)['#text'];
-    if (text !== undefined && text !== null) return String(text);
-  }
-  return '';
 }
 
 interface RawEntry {
@@ -300,7 +255,6 @@ export interface RedditClientOptions {
   userAgent?: string;
 }
 
-const REJECTION_STATUSES = new Set([429, 503]);
 
 export function createRedditClient(options: RedditClientOptions = {}) {
   const {
@@ -313,38 +267,18 @@ export function createRedditClient(options: RedditClientOptions = {}) {
     userAgent = 'GameRankScout/0.1 (+https://github.com/qgauvrit/GameRankScout)',
   } = options;
 
-  let lastRequestAt: number | null = null;
-
-  async function pace(): Promise<void> {
-    if (lastRequestAt === null) return;
-    const elapsed = nowImpl() - lastRequestAt;
-    if (elapsed < minIntervalMs) await sleepImpl(minIntervalMs - elapsed);
-  }
-
-  async function request(url: string): Promise<string> {
-    let attempt = 0;
-    for (;;) {
-      attempt += 1;
-      await pace();
-      lastRequestAt = nowImpl();
-
-      const response = await fetchImpl(url, {
-        headers: { 'user-agent': userAgent, accept: 'application/atom+xml' },
-      });
-
-      if (response.ok) return await response.text();
-
-      if (REJECTION_STATUSES.has(response.status)) {
-        if (attempt > maxRetries) throw new RedditRejectedError(response.status, attempt);
-        // Exponential backoff. Rejection is expected traffic shaping, not an
-        // exceptional condition, so it never propagates as a corpus failure.
-        await sleepImpl(baseBackoffMs * 2 ** (attempt - 1));
-        continue;
-      }
-
-      throw new Error(`Reddit request failed with HTTP ${response.status}: ${url}`);
-    }
-  }
+  const request = createPacedFetch({
+    source: 'Reddit',
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    minIntervalMs,
+    baseBackoffMs,
+    maxRetries,
+    headers: { 'user-agent': userAgent, accept: 'application/atom+xml' },
+    // Reddit's own error type is part of this module's published surface.
+    onRejected: (status, attempts) => new RedditRejectedError(status, attempts),
+  });
 
   return {
     async fetchListing(

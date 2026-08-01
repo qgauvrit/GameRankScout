@@ -207,4 +207,40 @@ describe('ingest run', () => {
 
     expect(a).toEqual(b);
   });
+
+  // The publish outcome is written here and overwritten later, from a different
+  // job, after this file has already been committed. So the only honest value
+  // the ingest can write is the one that says it does not know yet — anything
+  // else would be a claim about a deploy that has not been attempted.
+  describe('the publish outcome it cannot yet know', () => {
+    it('leaves a successful run marked not_attempted', async () => {
+      expect((await runIngest(deps())).publish).toBe('not_attempted');
+    });
+
+    it('marks a run that never produced a corpus not_attempted too', async () => {
+      // Not `deploy_failed`: nothing was deployed, and reading those as the
+      // same thing would hide the difference the field exists to show.
+      const d = deps({ adapters: [adapter('reddit', new Error('reddit down'))] });
+
+      const error = await runIngest(d).then(
+        () => null,
+        (e: unknown) => e as AllSourcesFailedError,
+      );
+
+      expect(error?.report.publish).toBe('not_attempted');
+    });
+
+    it('marks a run that swept fine but yielded no games not_attempted', async () => {
+      // The third path out of this module: sources succeeded, the corpus was
+      // empty, so there is nothing to publish and nothing was.
+      const d = deps({ adapters: [adapter('reddit', [])] });
+
+      const error = await runIngest(d).then(
+        () => null,
+        (e: unknown) => e as AllSourcesFailedError,
+      );
+
+      expect(error?.report.publish).toBe('not_attempted');
+    });
+  });
 });

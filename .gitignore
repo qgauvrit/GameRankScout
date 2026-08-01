@@ -46,3 +46,6 @@ yarn-error.log*
 
 # A locally generated corpus for development. Never committed (KTD11).
 public/corpus.json
+
+# Wrangler's local dev state (miniflare storage, caches). Regenerated on demand.
+.wrangler/

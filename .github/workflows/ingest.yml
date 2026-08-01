@@ -205,6 +205,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
+      # `wrangler deploy` reports success as long as the upload completed, so
+      # the three ways a deploy silently breaks — no shell, no corpus in the
+      # asset set, /adhoc no longer routed to the Worker — are only visible
+      # from outside. Reported through its exit status so the recording step
+      # below still runs.
+      - name: Smoke-check the deployment
+        id: smoke
+        if: steps.deploy.outcome == 'success'
+        env:
+          DEPLOY_ORIGIN: ${{ vars.DEPLOY_ORIGIN }}
+        run: |
+          if [ -z "$DEPLOY_ORIGIN" ]; then
+            echo "::error::The DEPLOY_ORIGIN repository variable is not set, so there is nothing to check."
+            exit 1
+          fi
+          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN"
+
       # Uploaded from here rather than the sweep so the recovery artifact is the
       # build that actually went live.
       - name: Upload the deployed site
@@ -222,9 +239,18 @@ jobs:
         if: always()
         env:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           case "$DEPLOY_OUTCOME" in
-            success) outcome=published ;;
+            success)
+              # A deploy that uploaded but does not serve is a failed publish,
+              # not a successful one.
+              if [ "$SMOKE_OUTCOME" = "failure" ]; then
+                outcome=smoke_failed
+              else
+                outcome=published
+              fi
+              ;;
             failure) outcome=deploy_failed ;;
             # Skipped or cancelled: the build failed, so no deploy was reached.
             *)       outcome=not_attempted ;;

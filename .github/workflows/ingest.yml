@@ -165,6 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+
     # Both deploy paths share one group so they can never interleave. Only this
     # one exists today; the code-triggered path is deferred, and will join it.
     concurrency:
@@ -259,9 +260,15 @@ jobs:
       # asset set, /adhoc no longer routed to the Worker — are only visible
       # from outside. Reported through its exit status so the recording step
       # below still runs.
+      #
+      # The corpus timestamp is passed in because every check below would also
+      # pass against the deployment that was already live. It is read from the
+      # artifact this job just deployed, so a green result names those bytes and
+      # not a deploy that silently never took effect.
       - name: Smoke-check the deployment
         id: smoke
         if: steps.deploy.outcome == 'success'
+        shell: bash
         env:
           DEPLOY_ORIGIN: ${{ vars.DEPLOY_ORIGIN }}
         run: |
@@ -269,7 +276,10 @@ jobs:
             echo "::error::The DEPLOY_ORIGIN repository variable is not set, so there is nothing to check."
             exit 1
           fi
-          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN"
+          # -e fails on a null or absent field rather than passing "null" along
+          # as the value the live corpus is expected to match.
+          generated_at="$(jq -er .generatedAt public/corpus.json)"
+          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at"
 
       # `always()` is the whole point. Without it GitHub skips this step once
       # the deploy fails — which is precisely the case R8 exists to surface, and

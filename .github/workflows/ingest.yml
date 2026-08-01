@@ -165,6 +165,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # The deploy credential belongs here rather than in repository secrets, so
+    # it can be restricted to the default branch. A repository secret is
+    # readable by every workflow this repository runs, and this repository is
+    # public: a workflow step that prints the token is one merged pull request
+    # away. Environment secrets fall back to repository ones, so this is inert
+    # until the environment exists — see the deployment section of the PR.
+    environment: production
+
 
     # Both deploy paths share one group so they can never interleave. Only this
     # one exists today; the code-triggered path is deferred, and will join it.

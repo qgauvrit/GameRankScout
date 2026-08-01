@@ -1,6 +1,7 @@
 import { parseListingFeed } from '../src/sources/reddit.js';
 import { parseLemmyListing, LEMMY_SORTS } from '../src/sources/lemmy.js';
 import { RANKING_WINDOWS } from '../src/corpus/schema.js';
+import { ADHOC_PATH, CACHE_TTL_MS, MAX_ENTRIES } from './config.js';
 import type { RankingWindow, SourceItem } from '../src/corpus/schema.js';
 
 /**
@@ -37,16 +38,6 @@ export type AdhocSource = keyof typeof SOURCE_HOSTS;
  */
 const REDDIT_NAME = /^[A-Za-z0-9_]{2,21}$/;
 const LEMMY_NAME = /^[a-z0-9_]{2,50}$/;
-
-/** How long a fetched community stays warm. Long enough to absorb a retry. */
-export const CACHE_TTL_MS = 5 * 60 * 1000;
-
-/**
- * Entries parsed per request. A full Reddit page is 100; the ceiling exists so
- * an unusually large feed degrades into fewer entries rather than exhausting
- * the invocation's CPU budget and failing outright.
- */
-export const MAX_ENTRIES = 100;
 
 /** Minimum spacing between outbound requests from one isolate. */
 const MIN_INTERVAL_MS = 1_000;
@@ -286,9 +277,6 @@ export async function handleRequest(request: Request, deps: AdhocDeps = {}): Pro
     return json({ error: 'upstream_failed' }, 502);
   }
 }
-
-/** The one path this Worker answers itself. Everything else is a static asset. */
-export const ADHOC_PATH = '/adhoc';
 
 /**
  * The binding Cloudflare exposes for the site's static assets.

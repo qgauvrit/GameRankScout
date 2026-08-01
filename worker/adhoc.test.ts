@@ -1,17 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  CACHE_TTL_MS,
   CommunityNotFoundError,
   InvalidCommunityError,
-  MAX_ENTRIES,
   fetchCommunity,
   handleRequest,
   memoryCache,
   resolveTarget,
-  ADHOC_PATH,
 } from './adhoc.js';
 import worker from './adhoc.js';
+import { ADHOC_PATH, CACHE_TTL_MS, MAX_ENTRIES } from './config.js';
 import type { AdhocDeps } from './adhoc.js';
 
 const REDDIT_FEED = readFileSync('test/fixtures/reddit/top-year.xml', 'utf8');

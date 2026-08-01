@@ -17,12 +17,17 @@ import { resolve } from 'node:path';
 import { withPublishOutcome, writeRunReport } from '../src/ingest/report.js';
 import type { RunReport } from '../src/ingest/report.js';
 
-function main(argv: string[]): void {
+/**
+ * Returns the exit code rather than calling `process.exit`, so the suite can
+ * assert on what each failure does to the report on disk. The process boundary
+ * is below.
+ */
+export function recordPublish(argv: string[]): number {
   const [path, outcome] = argv;
 
   if (!path || !outcome) {
     console.error('usage: record-publish <report-path> <outcome>');
-    process.exit(2);
+    return 2;
   }
 
   const absolute = resolve(path);
@@ -34,20 +39,21 @@ function main(argv: string[]): void {
     // its commit. Writing a fresh one here would invent a run that did not
     // happen, so this fails instead.
     console.error(`::error::Cannot read the run report at ${path}: ${(error as Error).message}`);
-    process.exit(1);
+    return 1;
   }
 
   try {
     writeRunReport(absolute, withPublishOutcome(report, outcome));
   } catch (error) {
     console.error(`::error::${(error as Error).message}`);
-    process.exit(1);
+    return 1;
   }
 
   console.log(`Recorded publish outcome: ${outcome}`);
+  return 0;
 }
 
-// Only run when invoked directly, so the suite can import the pure function.
+// Only run when invoked directly, so the suite can import the function above.
 if (process.argv[1] && resolve(process.argv[1]).endsWith('record-publish.ts')) {
-  main(process.argv.slice(2));
+  process.exit(recordPublish(process.argv.slice(2)));
 }

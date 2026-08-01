@@ -146,9 +146,11 @@ jobs:
   # uses the sweep only for its corpus.
   publish:
     needs: ingest
-    # `always()` plus the sweep step's own outcome, not the job's: a good corpus
-    # should still reach readers when a later step in that job failed.
-    if: always() && needs.ingest.outputs.corpus == 'success'
+    # The sweep step's own outcome, not the job's: a good corpus should still
+    # reach readers when a later step in that job failed. `!cancelled()` rather
+    # than `always()` so cancelling the run still stops the deploy — and wrapped
+    # in ${{ }} because a bare leading `!` is a YAML tag indicator.
+    if: ${{ !cancelled() && needs.ingest.outputs.corpus == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -159,8 +161,9 @@ jobs:
       cancel-in-progress: false
 
     # Write, because this job commits the publish outcome into the run report.
-    # The Cloudflare credentials stay step-level on the deploy step alone, so
-    # the step that holds the repository token never holds the deploy token.
+    # The checkout below does not persist that token into .git/config, so it is
+    # absent while npm ci runs install scripts and while wrangler holds the
+    # deploy credential; the push step supplies it explicitly instead.
     permissions:
       contents: write
 
@@ -172,6 +175,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
+          # Otherwise the contents:write token sits in .git/config for every
+          # later step, including npm ci's install scripts and the deploy.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -197,6 +203,17 @@ jobs:
       # condition, so a failure there skips this — but naming the dependency
       # keeps it true if anyone adds one later. A partial dist/ deployed over a
       # working site is the failure this guards.
+      # Before the deploy, and with always(), because a bare `if:` carries an
+      # implicit success() — so a failed smoke check would otherwise skip the
+      # recovery artifact at the exact moment it is wanted.
+      - name: Upload the built site
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 7
+
       - name: Deploy
         id: deploy
         if: steps.build.outcome == 'success'
@@ -222,16 +239,6 @@ jobs:
           fi
           npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN"
 
-      # Uploaded from here rather than the sweep so the recovery artifact is the
-      # build that actually went live.
-      - name: Upload the deployed site
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: dist
-          retention-days: 7
-
       # `always()` is the whole point. Without it GitHub skips this step once
       # the deploy fails — which is precisely the case R8 exists to surface, and
       # the report would go on claiming the publish was never attempted.
@@ -245,10 +252,12 @@ jobs:
             success)
               # A deploy that uploaded but does not serve is a failed publish,
               # not a successful one.
-              if [ "$SMOKE_OUTCOME" = "failure" ]; then
-                outcome=smoke_failed
-              else
+              # Only a verified check yields published. A cancelled or skipped
+              # smoke step means nobody confirmed the deployment serves.
+              if [ "$SMOKE_OUTCOME" = "success" ]; then
                 outcome=published
+              else
+                outcome=smoke_failed
               fi
               ;;
             failure) outcome=deploy_failed ;;
@@ -262,6 +271,11 @@ jobs:
       # same artifact a failed run does, without a second mechanism.
       - name: Commit the publish outcome
         if: always()
+        env:
+          # The checkout persisted no credentials, so the remote is supplied
+          # here — the one step that needs it, and never alongside the deploy
+          # token. Interpolated into a URL, never echoed.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -271,12 +285,13 @@ jobs:
             exit 0
           fi
           git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           for attempt in 1 2 3; do
-            if git push; then
+            if git push "$remote" "HEAD:${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g"; then
               exit 0
             fi
             echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
+            git pull --rebase --autostash "$remote" "${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g" || exit 1
           done
           echo "::error::Could not push the publish outcome after 3 attempts."
           exit 1

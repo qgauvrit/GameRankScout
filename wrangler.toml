@@ -41,7 +41,7 @@ not_found_handling = "single-page-application"
 # The routing authority. Everything outside this list is served straight from
 # the asset store: unbilled, unlimited, and without spending an invocation of
 # the free tier's request budget on a file that never changes. Keep this in
-# step with `ADHOC_PATH` in `worker/adhoc.ts`.
+# step with `ADHOC_PATH` in `worker/config.ts`.
 run_worker_first = ["/adhoc"]
 
 [observability]

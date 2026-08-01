@@ -3,10 +3,10 @@
  *
  *   tsx scripts/smoke.ts https://gamerankscout.example.workers.dev
  *
- * Three things a deploy can break without failing: the shell stops loading, the
- * corpus is missing from the uploaded asset set, or `/adhoc` stops being routed
- * to the Worker. Each is invisible to `wrangler deploy`, which reports success
- * as long as the upload completed.
+ * Four things a deploy can break without failing: the shell stops loading, its
+ * JavaScript bundle is missing, the corpus is missing from the uploaded asset
+ * set, or `/adhoc` stops being routed to the Worker. Each is invisible to
+ * `wrangler deploy`, which reports success as long as the upload completed.
  *
  * This is a script and not a test because it needs a live deployment and the
  * suite may not reach the network (KTD8). It runs in the publish job, after the
@@ -23,6 +23,10 @@
  * failure, so each check gets a few attempts before it counts. */
 const ATTEMPTS = 5;
 const BACKOFF_MS = 3_000;
+/** A hung origin would otherwise stall the publish job until its 20-minute cap. */
+const TIMEOUT_MS = 10_000;
+
+const get = (url: URL | string) => fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
 
 class SmokeFailure extends Error {}
 
@@ -44,18 +48,52 @@ async function withRetry<T>(what: string, run: () => Promise<T>): Promise<T> {
   throw new SmokeFailure(`${what}: ${(last as Error).message}`);
 }
 
+/** The headers `public/_headers` is supposed to add. Silently absent if the
+ * asset handler ignores the file, which is a failure no other check would see. */
+const REQUIRED_HEADERS = [
+  'content-security-policy',
+  'x-content-type-options',
+  'referrer-policy',
+  'strict-transport-security',
+];
+
 async function checkShell(origin: string): Promise<void> {
-  const response = await fetch(new URL('/', origin));
+  const response = await get(new URL('/', origin));
   const body = await response.text();
 
   if (!response.ok) throw new Error(`GET / returned ${response.status}`);
   if (!body.includes('<div id="root">')) {
     throw new Error('GET / did not return the app shell');
   }
+
+  const missing = REQUIRED_HEADERS.filter((name) => !response.headers.get(name));
+  if (missing.length > 0) {
+    throw new Error(`GET / is missing ${missing.join(', ')} — _headers was not applied`);
+  }
+}
+
+/**
+ * The shell alone proves nothing. Under the SPA fallback a missing bundle is
+ * served as 200 with index.html, so a site whose JavaScript never loads returns
+ * a perfectly good-looking shell — the exact shape of silent pass this check
+ * exists to refuse.
+ */
+async function checkBundle(origin: string): Promise<void> {
+  const shell = await (await get(new URL('/', origin))).text();
+  const src = /<script[^>]+src="([^"]+)"/.exec(shell)?.[1];
+  if (!src) throw new Error('GET / returned a shell with no module script to load');
+
+  const response = await get(new URL(src, origin));
+  const body = await response.text();
+
+  if (!response.ok) throw new Error(`GET ${src} returned ${response.status}`);
+  if (body.trimStart().startsWith('<')) {
+    throw new Error(`GET ${src} returned the SPA shell — the bundle is not in the deployed asset set`);
+  }
 }
 
 async function checkCorpus(origin: string): Promise<void> {
-  const response = await fetch(new URL('/corpus.json', origin));
+  const response = await get(new URL('/corpus.json', origin));
   const body = await response.text();
 
   // Deliberately not a status check. Under the SPA fallback an absent
@@ -86,7 +124,7 @@ async function checkAdhoc(origin: string): Promise<void> {
   const url = new URL('/adhoc', origin);
   url.searchParams.set('community', 'https://evil.test/steal');
 
-  const response = await fetch(url);
+  const response = await get(url);
 
   // A 400 proves two things at once: the path reached the Worker rather than
   // the asset store, and the identifier rules survived the deploy.
@@ -111,13 +149,14 @@ async function main(): Promise<void> {
 
   const checks: [string, () => Promise<void>][] = [
     ['shell', () => checkShell(origin)],
+    ['bundle', () => checkBundle(origin)],
     ['corpus', () => checkCorpus(origin)],
     ['adhoc', () => checkAdhoc(origin)],
   ];
 
-  // Concurrently: the three hit unrelated endpoints and nothing depends on
-  // another's result. Run in turn, a deployment that has not propagated yet
-  // pays each check's retry budget end to end rather than once.
+  // Concurrently: nothing depends on another's result. Run in turn, a
+  // deployment that has not propagated yet pays each check's retry budget end
+  // to end rather than once.
   const settled = await Promise.allSettled(checks.map(([name, run]) => withRetry(name, run)));
 
   // Reported in the fixed order above, so the output does not depend on which

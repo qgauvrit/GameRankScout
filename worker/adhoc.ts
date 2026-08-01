@@ -236,6 +236,10 @@ function json(body: unknown, status: number): Response {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
+      // The response embeds the caller's identifier in its error bodies, so it
+      // is never to be sniffed as anything but JSON, and never framed.
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
       // No cross-origin header. The app is served by this same Worker, so the
       // only legitimate caller is same-origin and needs no grant. A wildcard
       // here would hand every third-party page a CORS-bypassing relay into the

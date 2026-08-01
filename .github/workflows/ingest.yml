@@ -94,6 +94,17 @@ jobs:
           path: public/corpus.json
           retention-days: 7
 
+      # Uploaded so the publish job stamps its outcome onto this run's report
+      # rather than whatever the default branch happened to hold when it checked
+      # out — which is a different file whenever the push below loses its race.
+      - name: Upload the run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-report
+          path: data/run-report.json
+          retention-days: 7
+
       # The commit is the heartbeat. The host disables a schedule after 60 days
       # without repository activity and sends no notification when a run is
       # skipped, so every run commits its report — including a run that produced
@@ -194,6 +205,27 @@ jobs:
         with:
           name: corpus
           path: public
+
+      # This run's report, so the publish outcome cannot be recorded against a
+      # previous run's.
+      - name: Fetch this run's report
+        uses: actions/download-artifact@v4
+        with:
+          name: run-report
+          path: data
+
+      # The tip this job checked out is not necessarily the commit CI last went
+      # green on — a red default branch is reachable, and `vite build` does not
+      # type check. Failing here skips the deploy and leaves the live site alone.
+      - name: Lint and test
+        run: npm run lint && npm test
+
+      # The sweep produced this corpus hours ago against whatever schema version
+      # the tree held then. If a change bumped SCHEMA_VERSION meanwhile, the app
+      # rejects the corpus and every reader gets an empty ranking from a
+      # deployment that looks healthy from outside.
+      - name: Refuse a corpus this tree cannot read
+        run: npx tsx scripts/assert-corpus-version.ts public/corpus.json
 
       - name: Build
         id: build

@@ -201,6 +201,9 @@ describe('the HTTP surface', () => {
     // same-origin. A wildcard grant here would be a CORS-bypassing relay into
     // the allowlisted sources for any third-party page.
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    // The error bodies echo the caller's identifier back, so the response must
+    // never be sniffed as anything but JSON.
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     const body = (await response.json()) as { community: string; items: unknown[] };
     expect(body.community).toBe('r/cozygames');
     expect(body.items.length).toBeGreaterThan(0);

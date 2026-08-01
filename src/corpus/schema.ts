@@ -8,6 +8,32 @@ import { z } from 'zod';
  */
 export const SCHEMA_VERSION = 1;
 
+export class CorpusVersionMismatchError extends Error {
+  constructor(found: unknown, expected: number) {
+    super(
+      `Corpus is schemaVersion ${String(found)}, but this tree reads ${expected}. ` +
+        'Run the ingest against the current default branch to publish a corpus at the new version.',
+    );
+    this.name = 'CorpusVersionMismatchError';
+  }
+}
+
+/**
+ * Checks a raw corpus against the version this tree can read, without paying
+ * for full validation.
+ *
+ * The publish job builds current code against a corpus the sweep produced hours
+ * earlier, so a `SCHEMA_VERSION` bump landing in between pairs new code with an
+ * old corpus. The app would then load and report no ranking, from a deployment
+ * that looks healthy from outside — so the pairing is checked before deploying,
+ * where failing leaves the previous working deployment live.
+ */
+export function assertCorpusVersion(raw: string, expected: number = SCHEMA_VERSION): number {
+  const found = (JSON.parse(raw) as { schemaVersion?: unknown }).schemaVersion;
+  if (found !== expected) throw new CorpusVersionMismatchError(found, expected);
+  return expected;
+}
+
 export const RANKING_WINDOWS = ['week', 'month', 'sixMonths', 'year'] as const;
 export type RankingWindow = (typeof RANKING_WINDOWS)[number];
 

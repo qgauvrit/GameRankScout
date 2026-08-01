@@ -14,12 +14,17 @@ export type AdhocState =
   | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
 
 /**
- * Where the on-demand fetch function lives. Configured at build time because it
- * is a deployment detail, and defaulted to a same-origin path so a deployment
- * that routes `/adhoc` to the function needs no configuration at all.
+ * Where the on-demand fetch function lives.
+ *
+ * A relative path and not a build-time setting. One Worker serves both the app
+ * and this route — `run_worker_first = ["/adhoc"]` in `wrangler.toml` — so the
+ * only legitimate caller is same-origin, and the handler deliberately sends no
+ * cross-origin grant. A build-time override aimed at another origin could not
+ * work: the browser would block the response before it reached this client.
+ * Deployments that route `/adhoc` to the function therefore need no
+ * configuration at all, which is the property the co-location buys.
  */
-export const ADHOC_ENDPOINT: string =
-  (import.meta.env?.VITE_ADHOC_URL as string | undefined) ?? '/adhoc';
+export const ADHOC_ENDPOINT: string = '/adhoc';
 
 export class AdhocUnavailableError extends Error {
   readonly status: number | null;

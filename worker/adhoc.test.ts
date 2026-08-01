@@ -6,6 +6,7 @@ import {
   fetchCommunity,
   handleRequest,
   memoryCache,
+  refuseOverRate,
   resolveTarget,
 } from './adhoc.js';
 import worker from './adhoc.js';
@@ -246,9 +247,12 @@ describe('routing between the handler and the static site', () => {
    * cover the fallback anyway: the failure it absorbs is total, and it is the
    * only part of the routing that can be exercised without a deployment.
    */
-  function env() {
+  function env(limit: () => Promise<{ success: boolean }> = async () => ({ success: true })) {
     const assets = vi.fn(async () => new Response('<!doctype html>shell', { status: 200 }));
-    return { assets, binding: { ASSETS: { fetch: assets } } };
+    return {
+      assets,
+      binding: { ASSETS: { fetch: assets }, ADHOC_RATE_LIMIT: { limit } },
+    };
   }
 
   it('keeps /adhoc in the handler and away from the asset store', async () => {
@@ -292,5 +296,88 @@ describe('routing between the handler and the static site', () => {
     // Two files have to agree on one string; a drift here silently routes the
     // whole site into the handler or the handler into the asset store.
     expect(manifest).toContain(`run_worker_first = ["${ADHOC_PATH}"]`);
+  });
+});
+
+describe('the ceiling on a path anyone can call', () => {
+  const hit = new Request('https://grs.test/adhoc?community=r/cozygames', {
+    headers: { 'cf-connecting-ip': '203.0.113.7' },
+  });
+
+  const limiter = (success: boolean, seen: { key?: string } = {}) => ({
+    async limit({ key }: { key: string }) {
+      seen.key = key;
+      return { success };
+    },
+  });
+
+  it('lets a caller under the ceiling through', async () => {
+    expect(await refuseOverRate(hit, limiter(true))).toBeNull();
+  });
+
+  it('refuses a caller over it, without contacting any source', async () => {
+    const response = await refuseOverRate(hit, limiter(false));
+
+    expect(response?.status).toBe(429);
+    expect(await response?.json()).toEqual({ error: 'rate_limited' });
+  });
+
+  it('meters by caller address rather than in aggregate', async () => {
+    // Otherwise one abusive caller would lock out every reader at once.
+    const seen: { key?: string } = {};
+    await refuseOverRate(hit, limiter(true, seen));
+
+    expect(seen.key).toBe('203.0.113.7');
+  });
+
+  it('puts callers with no address into one shared bucket', async () => {
+    const seen: { key?: string } = {};
+    await refuseOverRate(new Request('https://grs.test/adhoc'), limiter(true, seen));
+
+    // Erring toward refusing. A caller that could suppress the header would
+    // otherwise get a bucket of their own for free.
+    expect(seen.key).toBe('unattributed');
+  });
+
+  it('refuses everyone when the binding is gone', async () => {
+    // The failure this exists for: rename the binding in wrangler.toml and the
+    // path would otherwise go on serving, unmetered, with nothing to show it.
+    const response = await refuseOverRate(hit, undefined);
+
+    expect(response?.status).toBe(503);
+  });
+
+  it('refuses everyone when the limiter itself fails', async () => {
+    const broken = {
+      async limit(): Promise<{ success: boolean }> {
+        throw new Error('rate limiting unavailable');
+      },
+    };
+
+    expect((await refuseOverRate(hit, broken))?.status).toBe(503);
+  });
+
+  it('meters /adhoc and leaves static assets alone', async () => {
+    // Asset requests never reach the Worker in a correct deployment, and
+    // spending the reader's budget on the site itself would be a bug either way.
+    const metered = vi.fn(async () => ({ success: false }));
+    const assets = vi.fn(async () => new Response('<!doctype html>shell', { status: 200 }));
+    const binding = { ASSETS: { fetch: assets }, ADHOC_RATE_LIMIT: { limit: metered } };
+
+    await worker.fetch(new Request('https://grs.test/'), binding);
+    expect(metered).not.toHaveBeenCalled();
+    expect(assets).toHaveBeenCalledOnce();
+
+    const refused = await worker.fetch(new Request('https://grs.test/adhoc'), binding);
+    expect(metered).toHaveBeenCalledOnce();
+    expect(refused.status).toBe(429);
+  });
+
+  it('declares the same binding name the Worker reads', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+
+    // A binding the manifest names differently is a binding the Worker never
+    // receives — and this one fails closed, so the whole path would go dark.
+    expect(manifest).toContain('name = "ADHOC_RATE_LIMIT"');
   });
 });

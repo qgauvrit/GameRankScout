@@ -283,7 +283,20 @@ export async function handleRequest(request: Request, deps: AdhocDeps = {}): Pro
 }
 
 /**
- * The binding Cloudflare exposes for the site's static assets.
+ * The per-IP ceiling on this path, enforced by Cloudflare ahead of the handler.
+ *
+ * It is a binding in `wrangler.toml` and not a dashboard rate-limiting rule
+ * because WAF rules attach to a zone, and `workers.dev` is Cloudflare's zone
+ * rather than this account's — there is nothing to attach one to until a custom
+ * domain exists. The binding travels with the deploy either way, so the ceiling
+ * is reviewable in the manifest instead of living in someone's dashboard.
+ */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+/**
+ * The bindings Cloudflare exposes to this Worker.
  *
  * Declared here rather than taken from `@cloudflare/workers-types`: that
  * package's globals conflict with the `DOM` lib the app under `src/` is typed
@@ -291,6 +304,38 @@ export async function handleRequest(request: Request, deps: AdhocDeps = {}): Pro
  */
 export interface AdhocEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
+  ADHOC_RATE_LIMIT: RateLimiter;
+}
+
+/**
+ * Refuses a caller over the ceiling — and refuses everyone when the ceiling is
+ * missing. Returns null to let the request through.
+ *
+ * Failing closed is the uncomfortable half of this. The alternative is that
+ * renaming or dropping the binding leaves a public, unauthenticated path that
+ * makes an outbound request per miss running with no ceiling at all, and
+ * nothing from outside would show it. The cost of being wrong this way is
+ * bounded and visible: the app already treats an unreachable `/adhoc` as "this
+ * community will wait for the next run", the ranking is untouched, and the
+ * smoke check reads the 503 and refuses to record the publish as successful.
+ */
+export async function refuseOverRate(
+  request: Request,
+  limiter: RateLimiter | undefined,
+): Promise<Response | null> {
+  if (!limiter) return json({ error: 'unavailable' }, 503);
+
+  // Cloudflare sets this on every edge request. An absent header puts all such
+  // callers in one bucket, which errs toward refusing rather than toward an
+  // unmetered path — and a caller that could suppress it could equally forge it.
+  const key = request.headers.get('cf-connecting-ip') ?? 'unattributed';
+
+  try {
+    const { success } = await limiter.limit({ key });
+    return success ? null : json({ error: 'rate_limited' }, 429);
+  } catch {
+    return json({ error: 'unavailable' }, 503);
+  }
 }
 
 /**
@@ -304,9 +349,12 @@ export interface AdhocEnv {
  * handler that answers every path with `invalid_community`.
  */
 export default {
-  fetch(request: Request, env: AdhocEnv): Promise<Response> {
-    return new URL(request.url).pathname === ADHOC_PATH
-      ? handleRequest(request)
-      : env.ASSETS.fetch(request);
+  async fetch(request: Request, env: AdhocEnv): Promise<Response> {
+    if (new URL(request.url).pathname !== ADHOC_PATH) return env.ASSETS.fetch(request);
+
+    // Ahead of validation, not after it: rejecting a malformed identifier is
+    // cheap for this Worker but not free, and an attacker sending nothing but
+    // malformed identifiers would otherwise pay no toll at all.
+    return (await refuseOverRate(request, env.ADHOC_RATE_LIMIT)) ?? handleRequest(request);
   },
 };

@@ -32,6 +32,31 @@ workers_dev = true
 # isolate and talks only to the hosts hard-coded in its allowlist, so there is
 # nothing here to configure and nothing to leak.
 
+# The ceiling on `/adhoc`, which is the only path here that costs anything to
+# serve: it is public, unauthenticated, and makes an outbound request to a
+# source that rate-limits us in turn on every cache miss.
+#
+# It lives in the manifest and not in a dashboard rule because a WAF
+# rate-limiting rule attaches to a zone, and `workers.dev` is Cloudflare's zone
+# rather than this account's — there is no zone here to attach one to until a
+# custom domain exists. `[[unsafe.bindings]]` is how the rate-limiting binding
+# is declared while the API is in beta; `unsafe` names the stability of the
+# interface, not the safety of the rule.
+#
+# Twenty a minute is far above what a reader adding communities by hand reaches
+# and far below what makes this path worth abusing. It bounds a burst from one
+# address rather than a determined distributed abuser — for that the free tier's
+# own request budget is the backstop, and `run_worker_first` returns 429 once it
+# is spent. `worker/adhoc.ts` refuses the request outright if this binding ever
+# stops being delivered.
+[[unsafe.bindings]]
+name = "ADHOC_RATE_LIMIT"
+type = "ratelimit"
+# Account-local identifier for the limiter, not a secret and not a resource that
+# has to be created first. Changing it resets the counters.
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

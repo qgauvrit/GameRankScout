@@ -245,9 +245,10 @@ function json(body: unknown, status: number): Response {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      // The app is the only caller, but it is served from a different origin
-      // than this function, so the response has to say so.
-      'access-control-allow-origin': '*',
+      // No cross-origin header. The app is served by this same Worker, so the
+      // only legitimate caller is same-origin and needs no grant. A wildcard
+      // here would hand every third-party page a CORS-bypassing relay into the
+      // sources this handler is allowed to reach.
       // Only successes are cacheable. Caching a rejection would leave a reader
       // who mistyped a community name looking at the same error for five
       // minutes after they fixed it.
@@ -286,6 +287,34 @@ export async function handleRequest(request: Request, deps: AdhocDeps = {}): Pro
   }
 }
 
+/** The one path this Worker answers itself. Everything else is a static asset. */
+export const ADHOC_PATH = '/adhoc';
+
+/**
+ * The binding Cloudflare exposes for the site's static assets.
+ *
+ * Declared here rather than taken from `@cloudflare/workers-types`: that
+ * package's globals conflict with the `DOM` lib the app under `src/` is typed
+ * against, and `npm run lint` type-checks both in one pass.
+ */
+export interface AdhocEnv {
+  ASSETS: { fetch(request: Request): Promise<Response> };
+}
+
+/**
+ * `run_worker_first` in `wrangler.toml` is the routing authority: it sends
+ * `/adhoc` here and every other request straight to the asset server without
+ * spending a Worker invocation. So in a correct deployment this only ever sees
+ * `/adhoc`, and the delegation below never runs.
+ *
+ * It exists anyway because the failure it covers is total — a `run_worker_first`
+ * pattern that stops matching would otherwise route the whole site into a
+ * handler that answers every path with `invalid_community`.
+ */
 export default {
-  fetch: (request: Request) => handleRequest(request),
+  fetch(request: Request, env: AdhocEnv): Promise<Response> {
+    return new URL(request.url).pathname === ADHOC_PATH
+      ? handleRequest(request)
+      : env.ASSETS.fetch(request);
+  },
 };

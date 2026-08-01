@@ -9,7 +9,9 @@ import {
   handleRequest,
   memoryCache,
   resolveTarget,
+  ADHOC_PATH,
 } from './adhoc.js';
+import worker from './adhoc.js';
 import type { AdhocDeps } from './adhoc.js';
 
 const REDDIT_FEED = readFileSync('test/fixtures/reddit/top-year.xml', 'utf8');
@@ -197,7 +199,10 @@ describe('the HTTP surface', () => {
     const response = await handleRequest(url('source=reddit&community=r/cozygames'), deps(REDDIT_FEED));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    // The app is served by this same Worker, so the only legitimate caller is
+    // same-origin. A wildcard grant here would be a CORS-bypassing relay into
+    // the allowlisted sources for any third-party page.
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
     const body = (await response.json()) as { community: string; items: unknown[] };
     expect(body.community).toBe('r/cozygames');
     expect(body.items.length).toBeGreaterThan(0);
@@ -230,5 +235,61 @@ describe('the HTTP surface', () => {
     const response = await handleRequest(url('community=r/cozygames'), deps('', 503));
 
     expect(response.status).toBe(502);
+  });
+});
+
+describe('routing between the handler and the static site', () => {
+  /**
+   * `run_worker_first` in `wrangler.toml` is what actually routes production
+   * traffic, so in a correct deployment the delegation below never runs. These
+   * cover the fallback anyway: the failure it absorbs is total, and it is the
+   * only part of the routing that can be exercised without a deployment.
+   */
+  function env() {
+    const assets = vi.fn(async () => new Response('<!doctype html>shell', { status: 200 }));
+    return { assets, binding: { ASSETS: { fetch: assets } } };
+  }
+
+  it('keeps /adhoc in the handler and away from the asset store', async () => {
+    const { assets, binding } = env();
+
+    // An invalid window fails before any outbound fetch, so this exercises the
+    // routing decision without reaching the network.
+    const response = await worker.fetch(
+      new Request('https://grs.test/adhoc?community=r/cozygames&window=forever'),
+      binding,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid_window' });
+    expect(assets).not.toHaveBeenCalled();
+  });
+
+  it('serves the site root from the asset store', async () => {
+    const { assets, binding } = env();
+
+    const response = await worker.fetch(new Request('https://grs.test/'), binding);
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(await response.text()).toContain('shell');
+  });
+
+  it('sends an unknown route to the asset store rather than the handler', async () => {
+    const { assets, binding } = env();
+
+    // Route-shaped: no extension. Whether an asset-shaped 404 should stay a 404
+    // is `not_found_handling`'s call, and this assertion holds either way.
+    const response = await worker.fetch(new Request('https://grs.test/settings/communities'), binding);
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+  });
+
+  it('routes on the same path the wrangler manifest sends to the Worker', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+
+    // Two files have to agree on one string; a drift here silently routes the
+    // whole site into the handler or the handler into the asset store.
+    expect(manifest).toContain(`run_worker_first = ["${ADHOC_PATH}"]`);
   });
 });

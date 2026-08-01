@@ -1,0 +1,16 @@
+# Response headers for every asset this Worker serves.
+#
+# Cloudflare's asset handler sends none of these by default, and this is the
+# first time the app is exposed on a public origin at all.
+#
+# The CSP is the one that earns its keep: the ranking renders game titles and
+# outbound links derived from Reddit and Lemmy posts, so it is the control that
+# keeps a future rendering mistake from becoming script execution on the deploy
+# origin. React's escaping and the http(s)-only URL constraint in
+# `src/corpus/schema.ts` are the primary defences; this is the layer under them.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY

@@ -158,8 +158,11 @@ jobs:
       group: publish
       cancel-in-progress: false
 
+    # Write, because this job commits the publish outcome into the run report.
+    # The Cloudflare credentials stay step-level on the deploy step alone, so
+    # the step that holds the repository token never holds the deploy token.
     permissions:
-      contents: read
+      contents: write
 
     steps:
       # `ref` is load-bearing. Without it checkout resolves `github.sha` — the
@@ -211,3 +214,43 @@ jobs:
           name: site
           path: dist
           retention-days: 7
+
+      # `always()` is the whole point. Without it GitHub skips this step once
+      # the deploy fails — which is precisely the case R8 exists to surface, and
+      # the report would go on claiming the publish was never attempted.
+      - name: Record the publish outcome
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+        run: |
+          case "$DEPLOY_OUTCOME" in
+            success) outcome=published ;;
+            failure) outcome=deploy_failed ;;
+            # Skipped or cancelled: the build failed, so no deploy was reached.
+            *)       outcome=not_attempted ;;
+          esac
+          npx tsx scripts/record-publish.ts data/run-report.json "$outcome"
+
+      # The sweep already committed this file as the heartbeat (KTD6); this adds
+      # what only the publish job knows. A failed publish therefore lands in the
+      # same artifact a failed run does, without a second mechanism.
+      - name: Commit the publish outcome
+        if: always()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/run-report.json
+          if git diff --cached --quiet; then
+            echo "Publish outcome unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
+          done
+          echo "::error::Could not push the publish outcome after 3 attempts."
+          exit 1

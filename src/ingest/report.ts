@@ -10,6 +10,30 @@ import type { SourceStatus } from '../corpus/schema.js';
  * host's 60-day inactivity cutoff (KTD6), so it must stay cheap and must not
  * accumulate anything derived from posts or comments.
  */
+/**
+ * What became of the deploy that should have followed this run.
+ *
+ * A closed set, deliberately. The report is committed to a public repository
+ * on every run, so a captured `wrangler` error string would put account
+ * identifiers and internal URLs into permanent history — the same reasoning
+ * that keeps source content out of it.
+ *
+ * `not_attempted` is distinct from `deploy_failed`: a run whose sweep failed
+ * never reached a deploy, and reading those as the same thing would hide the
+ * failure this field exists to surface.
+ */
+export const PUBLISH_OUTCOMES = [
+  'not_attempted',
+  'published',
+  'deploy_failed',
+  'smoke_failed',
+] as const;
+export type PublishOutcome = (typeof PUBLISH_OUTCOMES)[number];
+
+export function isPublishOutcome(value: unknown): value is PublishOutcome {
+  return typeof value === 'string' && (PUBLISH_OUTCOMES as readonly string[]).includes(value);
+}
+
 export interface RunReport {
   startedAt: string;
   finishedAt: string;
@@ -19,11 +43,18 @@ export interface RunReport {
   games: number;
   evidence: number;
   corpusBytes: number;
+  /**
+   * Written by the ingest as `not_attempted` and overwritten by the publish job
+   * once it knows. The ingest cannot know: publishing happens in a later job,
+   * after this file has already been written and committed.
+   */
+  publish: PublishOutcome;
 }
 
 export function summarizeRunReport(report: RunReport): string {
   const lines = [
     `${report.ok ? 'ok' : 'FAILED'} — ${report.games} games, ${report.evidence} evidence records`,
+    `  publish: ${report.publish}`,
   ];
   for (const source of report.sources) {
     lines.push(

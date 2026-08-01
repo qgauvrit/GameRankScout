@@ -115,16 +115,24 @@ async function main(): Promise<void> {
     ['adhoc', () => checkAdhoc(origin)],
   ];
 
+  // Concurrently: the three hit unrelated endpoints and nothing depends on
+  // another's result. Run in turn, a deployment that has not propagated yet
+  // pays each check's retry budget end to end rather than once.
+  const settled = await Promise.allSettled(checks.map(([name, run]) => withRetry(name, run)));
+
+  // Reported in the fixed order above, so the output does not depend on which
+  // check happened to finish first.
   const failures: string[] = [];
-  for (const [name, run] of checks) {
-    try {
-      await withRetry(name, run);
+  settled.forEach((result, index) => {
+    const name = checks[index]![0];
+    if (result.status === 'fulfilled') {
       console.log(`  ✓ ${name}`);
-    } catch (error) {
-      failures.push((error as Error).message);
-      console.error(`  ✗ ${(error as Error).message}`);
+      return;
     }
-  }
+    const message = (result.reason as Error).message;
+    failures.push(message);
+    console.error(`  ✗ ${message}`);
+  });
 
   if (failures.length > 0) {
     console.error(`::error::Smoke check failed against ${origin}`);

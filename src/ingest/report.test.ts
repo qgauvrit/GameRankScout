@@ -2,8 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { summarizeRunReport, writeRunReport } from './report.js';
-import { InvalidOutcomeError, withPublishOutcome } from '../../scripts/record-publish.js';
+import {
+  InvalidOutcomeError,
+  summarizeRunReport,
+  withPublishOutcome,
+  writeRunReport,
+} from './report.js';
 import type { RunReport } from './report.js';
 
 /**

@@ -8,35 +8,14 @@
  *
  *   tsx scripts/record-publish.ts data/run-report.json published
  *
- * It exists as a script rather than inline `jq` so the report's shape stays
- * owned by `src/ingest/report.ts` and can be tested.
- *
- * The outcome must be one of the closed set. A `wrangler` failure string is
- * rejected rather than stored: this file is committed to a public repository on
- * every run, and a captured stderr line would put account identifiers and
- * internal URLs into permanent history that cannot be retracted.
+ * It is a thin CLI over `withPublishOutcome`: the report's shape and the
+ * closed set of outcomes are owned by `src/ingest/report.ts`, alongside the
+ * field they describe.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PUBLISH_OUTCOMES, isPublishOutcome, writeRunReport } from '../src/ingest/report.js';
+import { withPublishOutcome, writeRunReport } from '../src/ingest/report.js';
 import type { RunReport } from '../src/ingest/report.js';
-
-export class InvalidOutcomeError extends Error {}
-
-/**
- * Returns the updated report rather than writing it, so the decision and the
- * side effect can be tested apart.
- */
-export function withPublishOutcome(report: RunReport, outcome: string): RunReport {
-  if (!isPublishOutcome(outcome)) {
-    throw new InvalidOutcomeError(
-      `Refusing to record "${outcome.slice(0, 40)}": the publish outcome must be one of ` +
-        `${PUBLISH_OUTCOMES.join(', ')}. Arbitrary text is not stored — this report is public.`,
-    );
-  }
-
-  return { ...report, publish: outcome };
-}
 
 function main(argv: string[]): void {
   const [path, outcome] = argv;

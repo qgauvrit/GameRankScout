@@ -34,6 +34,28 @@ export function isPublishOutcome(value: unknown): value is PublishOutcome {
   return typeof value === 'string' && (PUBLISH_OUTCOMES as readonly string[]).includes(value);
 }
 
+export class InvalidOutcomeError extends Error {
+  constructor(rejected: string) {
+    super(
+      `Refusing to record "${rejected.slice(0, 40)}": the publish outcome must be one of ` +
+        `${PUBLISH_OUTCOMES.join(', ')}. Arbitrary text is not stored — this report is public.`,
+    );
+    this.name = 'InvalidOutcomeError';
+  }
+}
+
+/**
+ * Returns the updated report rather than writing it, so the decision and the
+ * side effect can be tested apart.
+ *
+ * This lives here rather than in the script that calls it because it is the
+ * `publish` field's invariant, and the field is defined here.
+ */
+export function withPublishOutcome(report: RunReport, outcome: string): RunReport {
+  if (!isPublishOutcome(outcome)) throw new InvalidOutcomeError(outcome);
+  return { ...report, publish: outcome };
+}
+
 export interface RunReport {
   startedAt: string;
   finishedAt: string;

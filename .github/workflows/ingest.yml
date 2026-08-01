@@ -271,6 +271,10 @@ jobs:
       # same artifact a failed run does, without a second mechanism.
       - name: Commit the publish outcome
         if: always()
+        # Explicit, because the redaction pipe below would otherwise report
+        # sed's exit status instead of git's — every push would look successful.
+        # GitHub runs `shell: bash` as `bash --noprofile --norc -eo pipefail`.
+        shell: bash
         env:
           # The checkout persisted no credentials, so the remote is supplied
           # here — the one step that needs it, and never alongside the deploy

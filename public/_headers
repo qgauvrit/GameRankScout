@@ -8,8 +8,15 @@
 # keeps a future rendering mistake from becoming script execution on the deploy
 # origin. React's escaping and the http(s)-only URL constraint in
 # `src/corpus/schema.ts` are the primary defences; this is the layer under them.
+#
+# `style-src` carries no 'unsafe-inline'. The app has no inline `style`
+# attributes and no `<style>` elements — every rule comes from the one stylesheet
+# Vite emits — so allowing them would only widen what a rendering mistake could
+# reach. This is verified by loading the built site under this exact policy and
+# watching for violations, not by reading the source; React's style handling
+# would not show up in a grep of `src/`.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains

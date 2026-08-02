@@ -23,6 +23,8 @@ import {
 
 const GENERATED_AT = '2026-08-01T07:44:00.000Z';
 const BUNDLE = '/assets/index-B3KZF911.js';
+/** Both halves of what this run published: its data and its code. */
+const EXPECTED = { generatedAt: GENERATED_AT, bundle: BUNDLE };
 
 const SECURITY_HEADERS = {
   'content-security-policy': "default-src 'self'",
@@ -109,7 +111,7 @@ describe('refusing the shell served in place of an asset', () => {
   it('catches a site whose JavaScript never loads', async () => {
     const missing = deployment({ [BUNDLE]: { body: SHELL } });
 
-    await expect(checkBundle(ORIGIN, { fetchImpl: missing })).rejects.toThrow(
+    await expect(checkBundle(ORIGIN, BUNDLE, { fetchImpl: missing })).rejects.toThrow(
       /the bundle is not in the deployed asset set/,
     );
   });
@@ -117,7 +119,26 @@ describe('refusing the shell served in place of an asset', () => {
   it('catches a shell with no module script to load at all', async () => {
     const empty = deployment({ '/': { body: '<!doctype html><div id="root"></div>', headers: SECURITY_HEADERS } });
 
-    await expect(checkBundle(ORIGIN, { fetchImpl: empty })).rejects.toThrow(/no module script/);
+    await expect(checkBundle(ORIGIN, BUNDLE, { fetchImpl: empty })).rejects.toThrow(/no module script/);
+  });
+
+  it('catches a shell left over from the previous build', async () => {
+    // The code half of the identity check. This deployment is entirely
+    // healthy — the shell loads, the bundle it names loads, the corpus is
+    // current — it is just serving the build before this one. Vite hashes the
+    // filename from the code, so the name is the only thing that says so.
+    const stale = '/assets/index-OLDHASH0.js';
+    const previous = deployment({
+      '/': {
+        body: `<!doctype html><div id="root"></div><script type="module" src="${stale}"></script>`,
+        headers: SECURITY_HEADERS,
+      },
+      [stale]: { body: 'import{a}from"./chunk.js";' },
+    });
+
+    await expect(checkBundle(ORIGIN, BUNDLE, { fetchImpl: previous })).rejects.toThrow(
+      /loads \/assets\/index-OLDHASH0\.js, not the .* this run built/,
+    );
   });
 });
 
@@ -261,7 +282,7 @@ describe('the run as a whole', () => {
   const once = <T,>(_what: string, run: () => Promise<T>) => run();
 
   it('passes against a deployment serving exactly what this run built', async () => {
-    expect(await runSmoke(ORIGIN, GENERATED_AT, { fetchImpl: deployment({}) }, once)).toEqual([]);
+    expect(await runSmoke(ORIGIN, EXPECTED, { fetchImpl: deployment({}) }, once)).toEqual([]);
   });
 
   it('reports every broken surface, not only the first', async () => {
@@ -270,7 +291,7 @@ describe('the run as a whole', () => {
       '/adhoc': { body: SHELL },
     });
 
-    const failures = await runSmoke(ORIGIN, GENERATED_AT, { fetchImpl: wrecked }, once);
+    const failures = await runSmoke(ORIGIN, EXPECTED, { fetchImpl: wrecked }, once);
 
     expect(failures).toHaveLength(2);
     expect(failures.join('\n')).toMatch(/corpus/);
@@ -280,7 +301,7 @@ describe('the run as a whole', () => {
   it('reports an empty corpus as a failure rather than a quiet week', async () => {
     const empty = deployment({ '/corpus.json': { body: corpus({ games: [] }) } });
 
-    expect(await runSmoke(ORIGIN, GENERATED_AT, { fetchImpl: empty }, once)).toEqual([
+    expect(await runSmoke(ORIGIN, EXPECTED, { fetchImpl: empty }, once)).toEqual([
       expect.stringMatching(/corpus with no games/),
     ]);
   });

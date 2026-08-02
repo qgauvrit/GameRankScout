@@ -169,8 +169,15 @@ jobs:
     # it can be restricted to the default branch. A repository secret is
     # readable by every workflow this repository runs, and this repository is
     # public: a workflow step that prints the token is one merged pull request
-    # away. Environment secrets fall back to repository ones, so this is inert
-    # until the environment exists — see the deployment section of the PR.
+    # away.
+    #
+    # Nothing in this file can tell the two scopes apart — environment secrets
+    # silently fall back to repository ones of the same name. So the names below
+    # are deliberately ones that should exist *only* on this environment
+    # (DEPLOY_, not the generic CLOUDFLARE_API_TOKEN a repository secret would
+    # likely be called). Created in the wrong place, they resolve to empty and
+    # the deploy fails loudly rather than quietly working with a credential
+    # every other workflow can read.
     environment: production
 
 
@@ -259,8 +266,11 @@ jobs:
         id: deploy
         if: steps.build.outcome == 'success'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Named for the environment they live on, not for the tool that reads
+          # them — see the `environment:` comment above for why the distinction
+          # is load-bearing.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DEPLOY_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DEPLOY_CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
       # `wrangler deploy` reports success as long as the upload completed, so
@@ -269,10 +279,12 @@ jobs:
       # from outside. Reported through its exit status so the recording step
       # below still runs.
       #
-      # The corpus timestamp is passed in because every check below would also
-      # pass against the deployment that was already live. It is read from the
-      # artifact this job just deployed, so a green result names those bytes and
-      # not a deploy that silently never took effect.
+      # The corpus timestamp and the bundle path are passed in because every
+      # check below would also pass against the deployment that was already
+      # live. Both are read from what this job just deployed — the corpus from
+      # the artifact, the bundle name from the shell it built — so a green
+      # result names those bytes and not a deploy that silently never took
+      # effect. Together they cover both halves: the data and the code.
       - name: Smoke-check the deployment
         id: smoke
         if: steps.deploy.outcome == 'success'
@@ -281,13 +293,21 @@ jobs:
           DEPLOY_ORIGIN: ${{ vars.DEPLOY_ORIGIN }}
         run: |
           if [ -z "$DEPLOY_ORIGIN" ]; then
-            echo "::error::The DEPLOY_ORIGIN repository variable is not set, so there is nothing to check."
+            echo "::error::The DEPLOY_ORIGIN variable is not set, so there is nothing to check."
             exit 1
           fi
           # -e fails on a null or absent field rather than passing "null" along
           # as the value the live corpus is expected to match.
           generated_at="$(jq -er .generatedAt public/corpus.json)"
-          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at"
+          # Vite hashes this filename from the built code, so it is the built
+          # code's identity. Empty means the build changed shape rather than
+          # that the shell is fine, so it fails here instead of downstream.
+          bundle="$(grep -oE '<script[^>]+src="[^"]+"' dist/index.html | grep -oE '/assets/[^"]+' | head -1)"
+          if [ -z "$bundle" ]; then
+            echo "::error::No module script found in the built dist/index.html."
+            exit 1
+          fi
+          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at" "$bundle"
 
       # `always()` is the whole point. Without it GitHub skips this step once
       # the deploy fails — which is precisely the case R8 exists to surface, and

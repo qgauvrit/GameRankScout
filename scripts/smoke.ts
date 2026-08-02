@@ -1,22 +1,24 @@
 /**
  * Checks a deployment actually works, from outside it.
  *
- *   tsx scripts/smoke.ts https://gamerankscout.example.workers.dev "$(jq -r .generatedAt public/corpus.json)"
+ *   tsx scripts/smoke.ts https://grs.example.workers.dev "$generated_at" /assets/index-abc123.js
  *
  * Four things a deploy can break without failing: the shell stops loading, its
  * JavaScript bundle is missing, the corpus is missing from the uploaded asset
  * set, or `/adhoc` stops being routed to the Worker. Each is invisible to
  * `wrangler deploy`, which reports success as long as the upload completed.
  *
- * The second argument is what makes this a check of *this* deploy. Everything
- * below passes just as well against the deployment that was already live, so a
- * deploy that never took effect — or one still propagating when the check ran —
- * would be confirmed by the version it was supposed to replace. The corpus this
- * job uploaded carries a `generatedAt` no earlier deployment can have, so
- * matching it is what ties the green result to the bytes just published. It is
- * required rather than optional for the same reason the checks below parse
- * bodies instead of reading statuses: a check that can be silently skipped is a
- * check that eventually is.
+ * The second and third arguments are what make this a check of *this* deploy.
+ * Everything below passes just as well against the deployment that was already
+ * live, so a deploy that never took effect — or one still propagating when the
+ * check ran — would be confirmed by the version it was supposed to replace.
+ * Between them the two arguments name both halves of what was published: the
+ * corpus this job uploaded carries a `generatedAt` no earlier deployment can
+ * have, and Vite hashes the bundle filename from the built code, so a shell
+ * still naming the previous bundle is the previous build. They are required
+ * rather than optional for the same reason the checks below parse bodies
+ * instead of reading statuses: a check that can be silently skipped is a check
+ * that eventually is.
  *
  * This is a script and not a test because it needs a live deployment and the
  * suite may not reach the network (KTD8). It runs in the publish job, after the
@@ -117,11 +119,25 @@ export async function checkShell(origin: string, deps: SmokeDeps = {}): Promise<
  * a perfectly good-looking shell — the exact shape of silent pass this check
  * exists to refuse.
  */
-export async function checkBundle(origin: string, deps: SmokeDeps = {}): Promise<void> {
+export async function checkBundle(
+  origin: string,
+  expectedBundle: string,
+  deps: SmokeDeps = {},
+): Promise<void> {
   const get = getter(deps);
   const shell = await (await get(new URL('/', origin))).text();
   const src = /<script[^>]+src="([^"]+)"/.exec(shell)?.[1];
   if (!src) throw new Error('GET / returned a shell with no module script to load');
+
+  // The code half of the identity check. The corpus proves the asset set is
+  // this run's; this proves the shell points at the code this run built. Vite
+  // hashes the filename from the bundle's contents, so a shell still naming the
+  // previous build's bundle is a shell from the previous build.
+  if (src !== expectedBundle) {
+    throw new Error(
+      `GET / loads ${src}, not the ${expectedBundle} this run built — the deployed shell is not this build`,
+    );
+  }
 
   const response = await get(new URL(src, origin));
   const body = await response.text();
@@ -217,14 +233,14 @@ export async function checkAdhoc(origin: string, deps: SmokeDeps = {}): Promise<
  */
 export async function runSmoke(
   origin: string,
-  expectedGeneratedAt: string,
+  expected: { generatedAt: string; bundle: string },
   deps: SmokeDeps = {},
   retry = withRetry,
 ): Promise<string[]> {
   const checks: [string, () => Promise<void>][] = [
     ['shell', () => checkShell(origin, deps)],
-    ['bundle', () => checkBundle(origin, deps)],
-    ['corpus', () => checkCorpus(origin, expectedGeneratedAt, deps)],
+    ['bundle', () => checkBundle(origin, expected.bundle, deps)],
+    ['corpus', () => checkCorpus(origin, expected.generatedAt, deps)],
     ['adhoc', () => checkAdhoc(origin, deps)],
   ];
 
@@ -251,13 +267,13 @@ export async function runSmoke(
 }
 
 async function main(argv: string[]): Promise<void> {
-  const [origin, expectedGeneratedAt] = argv;
-  if (!origin || !expectedGeneratedAt) {
-    console.error('usage: smoke <origin> <expected-corpus-generated-at>');
+  const [origin, generatedAt, bundle] = argv;
+  if (!origin || !generatedAt || !bundle) {
+    console.error('usage: smoke <origin> <expected-corpus-generated-at> <expected-bundle-path>');
     process.exit(2);
   }
 
-  const failures = await runSmoke(origin, expectedGeneratedAt);
+  const failures = await runSmoke(origin, { generatedAt, bundle });
 
   if (failures.length > 0) {
     console.error(`::error::Smoke check failed against ${origin}`);

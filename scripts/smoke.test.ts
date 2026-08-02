@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { checkAdhoc, checkBundle, checkCorpus, checkShell, runSmoke } from './smoke.js';
+import {
+  SmokeFailure,
+  checkAdhoc,
+  checkBundle,
+  checkCorpus,
+  checkShell,
+  runSmoke,
+  withRetry,
+} from './smoke.js';
 
 /**
  * The smoke check is the last thing standing between a broken deploy and a run
@@ -140,6 +148,109 @@ describe('checking the surface the deploy is supposed to expose', () => {
     await expect(checkAdhoc(ORIGIN, { fetchImpl: permissive })).rejects.toThrow(
       /rejected the identifier as "upstream_failed"/,
     );
+  });
+
+  it('names the rate gate rather than blaming the deploy', async () => {
+    // The two refusals the Worker's ceiling can produce before validation runs.
+    // Both used to read as an unexplained wrong status.
+    const refused = deployment({ '/adhoc': { body: '{"error":"rate_limited"}', status: 429 } });
+    const unbound = deployment({ '/adhoc': { body: '{"error":"unavailable"}', status: 503 } });
+
+    await expect(checkAdhoc(ORIGIN, { fetchImpl: refused })).rejects.toThrow(
+      /over the per-IP rate limit/,
+    );
+    await expect(checkAdhoc(ORIGIN, { fetchImpl: unbound })).rejects.toThrow(
+      /rate-limit binding was not delivered/,
+    );
+  });
+
+  it('catches a policy that permits what it was tightened to forbid', async () => {
+    // The header is present and every other check is green. Only its contents
+    // say the app is one rendering mistake from executing corpus-derived text.
+    const permissive = deployment({
+      '/': {
+        body: SHELL,
+        headers: {
+          ...SECURITY_HEADERS,
+          'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'",
+        },
+      },
+    });
+
+    await expect(checkShell(ORIGIN, { fetchImpl: permissive })).rejects.toThrow(
+      /permitting 'unsafe-inline'/,
+    );
+  });
+
+  it('asks for the corpus in a form no edge cache can answer from', async () => {
+    // Without this the retry budget can read a cached copy of the previous
+    // corpus and record a false failure against a deploy that did take effect.
+    const asked: string[] = [];
+    const recording = (async (input: URL | string) => {
+      asked.push(String(input));
+      return new Response(corpus(), { status: 200 });
+    }) as typeof fetch;
+
+    await checkCorpus(ORIGIN, GENERATED_AT, { fetchImpl: recording });
+
+    expect(asked[0]).toMatch(/\/corpus\.json\?smoke=\d+/);
+  });
+});
+
+describe('the retry budget that absorbs deploy propagation', () => {
+  it('returns as soon as an attempt succeeds', async () => {
+    // The case the budget exists for: the deployment is correct, it just was
+    // not live yet on the first look.
+    let attempts = 0;
+    const slow = async () => {
+      attempts += 1;
+      if (attempts < 3) throw new Error('not propagated yet');
+      return 'live';
+    };
+
+    expect(await withRetry('corpus', slow, 5, 0)).toBe('live');
+    expect(attempts).toBe(3);
+  });
+
+  it('gives up after the budget and reports the last failure', async () => {
+    const never = async () => {
+      throw new Error('still serving the previous corpus');
+    };
+
+    await expect(withRetry('corpus', never, 3, 0)).rejects.toThrow(SmokeFailure);
+    await expect(withRetry('corpus', never, 3, 0)).rejects.toThrow(
+      /corpus: still serving the previous corpus/,
+    );
+  });
+
+  it('spends exactly the attempts it was given', async () => {
+    // A budget that quietly stopped retrying would turn propagation lag back
+    // into a false publish failure, and nothing else here would notice.
+    let attempts = 0;
+    const never = async () => {
+      attempts += 1;
+      throw new Error('nope');
+    };
+
+    await expect(withRetry('corpus', never, 4, 0)).rejects.toThrow(SmokeFailure);
+    expect(attempts).toBe(4);
+  });
+
+  it('backs off further on each attempt', async () => {
+    const waits: number[] = [];
+    let last = Date.now();
+    const never = async () => {
+      const now = Date.now();
+      waits.push(now - last);
+      last = now;
+      throw new Error('nope');
+    };
+
+    await expect(withRetry('corpus', never, 4, 10)).rejects.toThrow(SmokeFailure);
+
+    // First call is immediate; the three that follow wait 10ms, 20ms, 30ms.
+    expect(waits[1]).toBeGreaterThanOrEqual(8);
+    expect(waits[3]).toBeGreaterThan(waits[1]!);
   });
 });
 

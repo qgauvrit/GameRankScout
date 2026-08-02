@@ -81,6 +81,14 @@ const REQUIRED_HEADERS = [
   'strict-transport-security',
 ];
 
+/**
+ * Directives whose presence would undo the policy while leaving the header
+ * there. Checking only that a CSP exists would pass on a policy that permits
+ * exactly what it is deployed to forbid — the same shape as checking a status
+ * instead of a body.
+ */
+const FORBIDDEN_CSP_SOURCES = ["'unsafe-inline'", "'unsafe-eval'"];
+
 export async function checkShell(origin: string, deps: SmokeDeps = {}): Promise<void> {
   const get = getter(deps);
   const response = await get(new URL('/', origin));
@@ -94,6 +102,12 @@ export async function checkShell(origin: string, deps: SmokeDeps = {}): Promise<
   const missing = REQUIRED_HEADERS.filter((name) => !response.headers.get(name));
   if (missing.length > 0) {
     throw new Error(`GET / is missing ${missing.join(', ')} — _headers was not applied`);
+  }
+
+  const policy = response.headers.get('content-security-policy') ?? '';
+  const permitted = FORBIDDEN_CSP_SOURCES.filter((source) => policy.includes(source));
+  if (permitted.length > 0) {
+    throw new Error(`GET / serves a Content-Security-Policy permitting ${permitted.join(', ')}`);
   }
 }
 
@@ -124,7 +138,14 @@ export async function checkCorpus(
   deps: SmokeDeps = {},
 ): Promise<void> {
   const get = getter(deps);
-  const response = await get(new URL('/corpus.json', origin));
+  // Cache-busted. The assertion below is that this deployment replaced the
+  // previous corpus, and an edge copy of the previous one would fail it — a
+  // false publish failure against a deploy that did take effect, which is the
+  // exact mistake this check exists to avoid making in the other direction.
+  const url = new URL('/corpus.json', origin);
+  url.searchParams.set('smoke', String(Date.now()));
+
+  const response = await get(url);
   const body = await response.text();
 
   // Deliberately not a status check. Under the SPA fallback an absent
@@ -171,9 +192,17 @@ export async function checkAdhoc(origin: string, deps: SmokeDeps = {}): Promise<
   // A 400 proves two things at once: the path reached the Worker rather than
   // the asset store, and the identifier rules survived the deploy.
   if (response.status !== 400) {
+    // The Worker's rate gate can answer before validation ever runs, and both of
+    // its refusals look like a broken deploy without this. They are not the same
+    // problem: 503 means the rate-limit binding was not delivered, 429 means
+    // this runner is over the ceiling.
+    const hint =
+      { 200: ' — the path may be served as a static asset',
+        429: ' — this checker is over the per-IP rate limit',
+        503: ' — the rate-limit binding was not delivered to the Worker' }[response.status] ?? '';
+
     throw new Error(
-      `GET /adhoc with a hostile identifier returned ${response.status}, expected 400` +
-        (response.status === 200 ? ' — the path may be served as a static asset' : ''),
+      `GET /adhoc with a hostile identifier returned ${response.status}, expected 400${hint}`,
     );
   }
   const body = (await response.json()) as { error?: string };

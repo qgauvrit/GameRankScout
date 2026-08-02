@@ -16,10 +16,17 @@
 # handler is written against: it parses at most one page of entries and returns
 # fewer rather than failing.
 #
-# The name is the public hostname. `workers.dev` derives the subdomain from it,
-# so this reads `gamerankscout` and not the handler's name — renaming after a
-# deploy mints a different URL and orphans the first one.
-name = "gamerankscout"
+# The name is the left-hand label of the public hostname:
+# `<name>.<account-subdomain>.workers.dev`. The account subdomain is already
+# `gamerankscout`, so naming the Worker that too would read
+# `gamerankscout.gamerankscout.workers.dev` — hence `app`, which gives
+# `app.gamerankscout.workers.dev` and keeps the project's name where it belongs.
+#
+# It is not the handler's name either: this Worker serves the whole site, and
+# `/adhoc` is one path within it. Renaming after a deploy mints a different URL
+# and orphans the first one, so this is settled before the first deploy rather
+# than after.
+name = "app"
 main = "worker/adhoc.ts"
 compatibility_date = "2026-07-01"
 

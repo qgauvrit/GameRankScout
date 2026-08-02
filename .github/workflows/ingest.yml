@@ -41,7 +41,17 @@ jobs:
     timeout-minutes: 300
 
     steps:
+      # `ref` for the same reason the publish job carries it, arrived at the
+      # hard way. Without it checkout resolves `github.sha` — the tip as it was
+      # when the run was *queued* — and this job can sit behind another sweep in
+      # the concurrency group for hours before it starts. The first real run hit
+      # exactly that: it queued behind the previous sweep, that sweep pushed its
+      # report seconds before this job began, and this one still checked out the
+      # commit before it. Two and a quarter hours later its push was rejected
+      # against a base that had been stale before the first request went out.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -111,24 +121,49 @@ jobs:
       # no new evidence, and a run that failed (KTD6).
       - name: Commit run report
         if: always()
+        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/run-report.json
-          if git diff --cached --quiet; then
-            echo "Report unchanged; committing an empty commit to keep the schedule alive."
-            git commit --allow-empty -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
-          else
-            git commit -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
-          fi
-          # The checkout can be hours old by now, so rebase onto whatever landed
-          # meanwhile rather than losing the heartbeat to a non-fast-forward.
+
+          commit_report() {
+            git add data/run-report.json
+            if git diff --cached --quiet; then
+              echo "Report unchanged; committing an empty commit to keep the schedule alive."
+              git commit --allow-empty -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
+            else
+              git commit -m "chore(ingest): run report $(date -u +%Y-%m-%dT%H:%MZ)"
+            fi
+          }
+
+          commit_report
+
+          # The checkout can be hours old by now, so a push can lose the race.
+          #
+          # Replaying rather than rebasing, because a rebase here cannot succeed
+          # on merit: this file is a whole-file snapshot of one run, so two runs'
+          # reports conflict on every line every time, and there is no merge that
+          # means anything. The resolution is not a merge — it is "this run's
+          # report is the current one", which is also how the file already
+          # behaves, since each run overwrites it wholesale.
+          #
+          # The old loop rebased and bailed on the conflict with `|| exit 1`,
+          # which left the rebase *in progress* and the tree full of conflict
+          # markers — so the corpus assert below then fired on that instead.
           for attempt in 1 2 3; do
             if git push; then
               exit 0
             fi
-            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || exit 1
+            echo "Push rejected (attempt $attempt); replaying this run's report onto the current tip."
+
+            # Keep this run's report, take everything else from the remote. The
+            # corpus is untracked, so a hard reset does not disturb it (KTD11).
+            cp data/run-report.json "${RUNNER_TEMP}/run-report.json"
+            git fetch origin "${GITHUB_REF_NAME}" || exit 1
+            git reset --hard "origin/${GITHUB_REF_NAME}" || exit 1
+            cp "${RUNNER_TEMP}/run-report.json" data/run-report.json
+
+            commit_report
           done
           echo "::error::Could not push the run report after 3 attempts."
           exit 1
@@ -139,6 +174,16 @@ jobs:
       - name: Assert no corpus was committed
         if: always()
         run: |
+          # An interrupted rebase or merge leaves conflict markers in tracked
+          # files, which is "dirty" by every measure below — so this alarm would
+          # announce a leaked corpus for something that is not a corpus at all.
+          # That happened on the first real run, and the wrong diagnosis cost
+          # more than the failure did. Name it before the alarm speaks.
+          if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ] || [ -f .git/MERGE_HEAD ]; then
+            echo "::error::A rebase or merge was left in progress. The tree below is its conflict, not a leaked corpus:"
+            git status --porcelain --untracked-files=no
+            exit 1
+          fi
           if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
             echo "::error::Working tree is dirty after the run:"
             git status --porcelain --untracked-files=no

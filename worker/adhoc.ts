@@ -304,7 +304,13 @@ export interface RateLimiter {
  */
 export interface AdhocEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  ADHOC_RATE_LIMIT: RateLimiter;
+  /**
+   * Optional, because the type describes what the runtime hands us rather than
+   * what the manifest asks for — and a binding that is not delivered arrives as
+   * nothing at all. Declaring it required would be a claim this file cannot
+   * make; `refuseOverRate` is what enforces it instead, by refusing.
+   */
+  ADHOC_RATE_LIMIT?: RateLimiter;
 }
 
 /**

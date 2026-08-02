@@ -34,9 +34,16 @@ function adhocNote(state: AdhocState | undefined, covered: boolean): string {
         ? ` · ${state.added} ${state.added === 1 ? 'mention' : 'mentions'} added`
         : ' · fetched, but nothing it discussed is in this corpus yet';
     case 'failed':
-      return state.reason === 'not_found'
-        ? ' · no such community'
-        : ' · could not reach it — the next scheduled run will try';
+      switch (state.reason) {
+        case 'not_found':
+          return ' · no such community';
+        // Says a minute rather than tomorrow, because that is the truth: the
+        // ceiling is per minute, and the pull is retried on the next load.
+        case 'rate_limited':
+          return ' · too many requests just now — try again in a minute';
+        default:
+          return ' · could not reach it — the next scheduled run will try';
+      }
     default:
       return covered ? '' : NOT_YET_SWEPT;
   }

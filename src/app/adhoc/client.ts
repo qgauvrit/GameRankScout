@@ -8,10 +8,18 @@ import type { RankingWindow, SourceItem } from '../../corpus/schema.js';
  * beside the screen that renders it, so the settings components do not have to
  * import a type back out of the app shell that renders them.
  */
+/**
+ * `rate_limited` is separate from `unreachable` because it is the one failure
+ * here that is the reader's own doing and passes on its own. Reporting it as
+ * unreachable would blame the source and tell them to wait for tomorrow's run,
+ * when waiting a minute is enough.
+ */
+export type AdhocFailure = 'not_found' | 'invalid' | 'rate_limited' | 'unreachable';
+
 export type AdhocState =
   | { status: 'loading' }
   | { status: 'merged'; added: number }
-  | { status: 'failed'; reason: 'not_found' | 'invalid' | 'unreachable' };
+  | { status: 'failed'; reason: AdhocFailure };
 
 /**
  * Where the on-demand fetch function lives.
@@ -28,9 +36,9 @@ export const ADHOC_ENDPOINT: string = '/adhoc';
 
 export class AdhocUnavailableError extends Error {
   readonly status: number | null;
-  readonly reason: 'not_found' | 'invalid' | 'unreachable';
+  readonly reason: AdhocFailure;
 
-  constructor(reason: 'not_found' | 'invalid' | 'unreachable', status: number | null = null) {
+  constructor(reason: AdhocFailure, status: number | null = null) {
     super(`Ad-hoc fetch failed: ${reason}`);
     this.name = 'AdhocUnavailableError';
     this.reason = reason;
@@ -71,6 +79,10 @@ export async function fetchAdhocCommunity(
 
   if (response.status === 404) throw new AdhocUnavailableError('not_found', 404);
   if (response.status === 400) throw new AdhocUnavailableError('invalid', 400);
+  // The handler's per-IP ceiling. Adding a community costs one request per
+  // ranking window, so a reader with many of them can reach it on one load —
+  // and unlike every other failure here, it clears by itself.
+  if (response.status === 429) throw new AdhocUnavailableError('rate_limited', 429);
   if (!response.ok) throw new AdhocUnavailableError('unreachable', response.status);
 
   try {

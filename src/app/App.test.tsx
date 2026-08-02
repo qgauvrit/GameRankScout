@@ -380,6 +380,69 @@ describe('app shell', () => {
     expect(screen.getByText('r/emulation')).toBeInTheDocument();
   });
 
+  it('tells a throttled reader to wait a minute, not for tomorrow', async () => {
+    // The Worker meters /adhoc per address, and adding a community costs one
+    // request per ranking window — so a reader with a lot of them can reach the
+    // ceiling on one load. Reporting that as unreachable would blame the source
+    // and point at a scheduled run, when the honest answer is much shorter.
+    const user = userEvent.setup();
+    const body = serializeCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/adhoc')) {
+          return new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 });
+        }
+        return new Response(body, { status: 200 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('button', { name: /Signal Drift/i });
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(await screen.findByText(/try again in a minute/i)).toBeInTheDocument();
+    expect(screen.queryByText(/could not reach it/i)).not.toBeInTheDocument();
+  });
+
+  it('lets a failed pull be tried again rather than failing it for the session', async () => {
+    // The pull key is claimed before the fetch so two loads cannot pull the
+    // same community twice. Holding it after a failure made that failure
+    // permanent — and every failure reachable here is transient.
+    const user = userEvent.setup();
+    const body = serializeCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
+    let refuse = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/adhoc')) {
+          if (refuse) return new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429 });
+          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        }
+        return new Response(body, { status: 200 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('button', { name: /Signal Drift/i });
+
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+    expect(await screen.findByText(/try again in a minute/i)).toBeInTheDocument();
+
+    // The ceiling clears, and removing and re-adding is the reader's retry.
+    refuse = false;
+    await user.click(screen.getByRole('button', { name: /^remove$/i }));
+    await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(await screen.findByText(/nothing it discussed is in this corpus yet/i)).toBeInTheDocument();
+  });
+
   it('brings a dismissed game back when the reader undoes it', async () => {
     const user = userEvent.setup();
     serveCorpus(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));

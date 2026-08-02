@@ -139,6 +139,13 @@ export function App() {
           [community.id]: { status: 'merged', added },
         }));
       } catch (error) {
+        // Release the key. It is claimed up front so two loads cannot pull the
+        // same community twice, but holding it after a failure makes the
+        // failure permanent for the session — and the failures reachable here
+        // are transient ones: a rate ceiling that clears in a minute, a source
+        // that was briefly unreachable. Nothing retries automatically, so a
+        // held key means the reader cannot either.
+        pulled.current.delete(pullKey);
         setAdhoc((current) => ({
           ...current,
           [community.id]: {

@@ -11,6 +11,7 @@ import {
 } from './adhoc.js';
 import worker from './adhoc.js';
 import { ADHOC_PATH, CACHE_TTL_MS, MAX_ENTRIES } from './config.js';
+import { RANKING_WINDOWS } from '../src/corpus/schema.js';
 import type { AdhocDeps } from './adhoc.js';
 
 const REDDIT_FEED = readFileSync('test/fixtures/reddit/top-year.xml', 'utf8');
@@ -330,6 +331,43 @@ describe('the ceiling on a path anyone can call', () => {
     expect(seen.key).toBe('203.0.113.7');
   });
 
+  describe('the bucket an IPv6 caller lands in', () => {
+    const keyFor = async (address: string) => {
+      const seen: { key?: string } = {};
+      await refuseOverRate(
+        new Request('https://grs.test/adhoc', { headers: { 'cf-connecting-ip': address } }),
+        limiter(true, seen),
+      );
+      return seen.key;
+    };
+
+    it('meters the subscriber, not the address they picked', async () => {
+      // The smallest block one subscriber is handed is a /64. Metering the full
+      // address would give that subscriber 2^64 buckets and no ceiling at all.
+      expect(await keyFor('2001:db8:abcd:1234::1')).toBe(
+        await keyFor('2001:db8:abcd:1234:ffff:ffff:ffff:ffff'),
+      );
+    });
+
+    it('keeps separate subscribers apart', async () => {
+      expect(await keyFor('2001:db8:abcd:1234::1')).not.toBe(await keyFor('2001:db8:abcd:9999::1'));
+    });
+
+    it('finds the boundary in a compressed address', async () => {
+      // Cloudflare sends the compressed form, where `::` stands for a run of
+      // zero groups whose length depends on the rest. Cutting the string as
+      // written would hand `2001:db8::1` its whole address back.
+      expect(await keyFor('2001:db8::1')).toBe('2001:0db8:0000:0000');
+      expect(await keyFor('2001:0db8:0000:0000:0000:0000:0000:0001')).toBe('2001:0db8:0000:0000');
+      expect(await keyFor('::1')).toBe('0000:0000:0000:0000');
+    });
+
+    it('leaves IPv4 whole', async () => {
+      // No equivalent slack: one address is one caller.
+      expect(await keyFor('203.0.113.7')).toBe('203.0.113.7');
+    });
+  });
+
   it('puts callers with no address into one shared bucket', async () => {
     const seen: { key?: string } = {};
     await refuseOverRate(new Request('https://grs.test/adhoc'), limiter(true, seen));
@@ -373,11 +411,29 @@ describe('the ceiling on a path anyone can call', () => {
     expect(refused.status).toBe(429);
   });
 
-  it('declares the same binding name the Worker reads', () => {
+  it('declares a binding the Worker can actually receive', () => {
     const manifest = readFileSync('wrangler.toml', 'utf8');
 
     // A binding the manifest names differently is a binding the Worker never
     // receives — and this one fails closed, so the whole path would go dark.
-    expect(manifest).toContain('name = "ADHOC_RATE_LIMIT"');
+    // The name alone is not enough: dropping `type` or changing it to another
+    // kind leaves the name in place and the ceiling gone.
+    expect(manifest).toMatch(
+      /\[\[unsafe\.bindings\]\]\nname = "ADHOC_RATE_LIMIT"\ntype = "ratelimit"\n(?:#[^\n]*\n)*namespace_id = "[^"]+"\nsimple = \{ limit = \d+, period = \d+ \}/,
+    );
+  });
+
+  it('leaves an ordinary reader room for every window of every community', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+    const limit = Number(/simple = \{ limit = (\d+),/.exec(manifest)?.[1]);
+
+    // One added community costs one request per ranking window, and the app
+    // re-pulls all of them concurrently whenever a corpus loads. A ceiling
+    // counted in communities rather than requests throttles a real reader on a
+    // healthy deployment — and adding a fifth window would silently do it again.
+    const communitiesPerLoad = limit / RANKING_WINDOWS.length;
+
+    expect(Number.isInteger(communitiesPerLoad)).toBe(true);
+    expect(communitiesPerLoad).toBeGreaterThanOrEqual(20);
   });
 });

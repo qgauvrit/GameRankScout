@@ -325,17 +325,57 @@ export async function refuseOverRate(
 ): Promise<Response | null> {
   if (!limiter) return json({ error: 'unavailable' }, 503);
 
+  try {
+    const { success } = await limiter.limit({ key: rateKey(request) });
+    return success ? null : json({ error: 'rate_limited' }, 429);
+  } catch (error) {
+    // Named, because a silent 503 here is indistinguishable from the binding
+    // being absent, and the two have different fixes. Workers observability is
+    // enabled in the manifest, so this reaches the log without a dependency.
+    console.error(`adhoc rate limiter unavailable: ${(error as Error).message}`);
+    return json({ error: 'unavailable' }, 503);
+  }
+}
+
+/**
+ * The bucket one caller is metered in.
+ *
+ * A single IPv6 address is the wrong unit: the smallest block handed to one
+ * subscriber is a /64, so metering the full address gives that one subscriber
+ * 2^64 buckets and no ceiling at all. Truncating to the first four hextets
+ * meters the subscriber rather than the address they happened to send from.
+ * IPv4 has no equivalent slack and is metered whole.
+ */
+export function rateKey(request: Request): string {
   // Cloudflare sets this on every edge request. An absent header puts all such
   // callers in one bucket, which errs toward refusing rather than toward an
   // unmetered path — and a caller that could suppress it could equally forge it.
-  const key = request.headers.get('cf-connecting-ip') ?? 'unattributed';
+  const address = request.headers.get('cf-connecting-ip');
+  if (!address) return 'unattributed';
+  return address.includes(':') ? ipv6Prefix(address) : address;
+}
 
-  try {
-    const { success } = await limiter.limit({ key });
-    return success ? null : json({ error: 'rate_limited' }, 429);
-  } catch {
-    return json({ error: 'unavailable' }, 503);
-  }
+/**
+ * The /64 an IPv6 address sits in, expanded so the boundary is where it looks.
+ *
+ * Cloudflare sends the compressed form, and `::` stands for a run of zero groups
+ * whose length depends on the rest of the address — so truncating the string as
+ * written would cut `2001:db8::1` at the wrong place and hand the caller their
+ * whole address back. Expanding first is what makes the fourth group actually
+ * the fourth group.
+ */
+function ipv6Prefix(address: string): string {
+  const [head, tail = ''] = address.split('::');
+  const headGroups = head ? head.split(':') : [];
+  const tailGroups = tail ? tail.split(':') : [];
+  const elided = address.includes('::')
+    ? Math.max(8 - headGroups.length - tailGroups.length, 0)
+    : 0;
+
+  return [...headGroups, ...Array<string>(elided).fill('0'), ...tailGroups]
+    .slice(0, 4)
+    .map((group) => group.padStart(4, '0'))
+    .join(':');
 }
 
 /**

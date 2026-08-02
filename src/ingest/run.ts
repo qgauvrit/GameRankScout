@@ -99,6 +99,7 @@ export async function runIngest(deps: IngestDeps): Promise<RunReport> {
       games: 0,
       evidence: 0,
       corpusBytes: 0,
+      publish: 'not_attempted',
     });
   }
 
@@ -119,6 +120,7 @@ export async function runIngest(deps: IngestDeps): Promise<RunReport> {
         games: 0,
         evidence: evidence.length,
         corpusBytes: 0,
+        publish: 'not_attempted',
       },
       'Run produced no games; refusing to publish an empty corpus over a good one',
     );
@@ -135,5 +137,6 @@ export async function runIngest(deps: IngestDeps): Promise<RunReport> {
     games: published.games,
     evidence: corpus.games.reduce((total, game) => total + game.evidence.length, 0),
     corpusBytes: published.bytes,
+    publish: 'not_attempted',
   };
 }

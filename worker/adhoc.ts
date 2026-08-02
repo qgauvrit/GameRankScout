@@ -1,6 +1,7 @@
 import { parseListingFeed } from '../src/sources/reddit.js';
 import { parseLemmyListing, LEMMY_SORTS } from '../src/sources/lemmy.js';
 import { RANKING_WINDOWS } from '../src/corpus/schema.js';
+import { ADHOC_PATH, CACHE_TTL_MS, MAX_ENTRIES } from './config.js';
 import type { RankingWindow, SourceItem } from '../src/corpus/schema.js';
 
 /**
@@ -37,16 +38,6 @@ export type AdhocSource = keyof typeof SOURCE_HOSTS;
  */
 const REDDIT_NAME = /^[A-Za-z0-9_]{2,21}$/;
 const LEMMY_NAME = /^[a-z0-9_]{2,50}$/;
-
-/** How long a fetched community stays warm. Long enough to absorb a retry. */
-export const CACHE_TTL_MS = 5 * 60 * 1000;
-
-/**
- * Entries parsed per request. A full Reddit page is 100; the ceiling exists so
- * an unusually large feed degrades into fewer entries rather than exhausting
- * the invocation's CPU budget and failing outright.
- */
-export const MAX_ENTRIES = 100;
 
 /** Minimum spacing between outbound requests from one isolate. */
 const MIN_INTERVAL_MS = 1_000;
@@ -245,9 +236,14 @@ function json(body: unknown, status: number): Response {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      // The app is the only caller, but it is served from a different origin
-      // than this function, so the response has to say so.
-      'access-control-allow-origin': '*',
+      // The response embeds the caller's identifier in its error bodies, so it
+      // is never to be sniffed as anything but JSON, and never framed.
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      // No cross-origin header. The app is served by this same Worker, so the
+      // only legitimate caller is same-origin and needs no grant. A wildcard
+      // here would hand every third-party page a CORS-bypassing relay into the
+      // sources this handler is allowed to reach.
       // Only successes are cacheable. Caching a rejection would leave a reader
       // who mistyped a community name looking at the same error for five
       // minutes after they fixed it.
@@ -286,6 +282,119 @@ export async function handleRequest(request: Request, deps: AdhocDeps = {}): Pro
   }
 }
 
+/**
+ * The per-IP ceiling on this path, enforced by Cloudflare ahead of the handler.
+ *
+ * It is a binding in `wrangler.toml` and not a dashboard rate-limiting rule
+ * because WAF rules attach to a zone, and `workers.dev` is Cloudflare's zone
+ * rather than this account's — there is nothing to attach one to until a custom
+ * domain exists. The binding travels with the deploy either way, so the ceiling
+ * is reviewable in the manifest instead of living in someone's dashboard.
+ */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+/**
+ * The bindings Cloudflare exposes to this Worker.
+ *
+ * Declared here rather than taken from `@cloudflare/workers-types`: that
+ * package's globals conflict with the `DOM` lib the app under `src/` is typed
+ * against, and `npm run lint` type-checks both in one pass.
+ */
+export interface AdhocEnv {
+  ASSETS: { fetch(request: Request): Promise<Response> };
+  ADHOC_RATE_LIMIT: RateLimiter;
+}
+
+/**
+ * Refuses a caller over the ceiling — and refuses everyone when the ceiling is
+ * missing. Returns null to let the request through.
+ *
+ * Failing closed is the uncomfortable half of this. The alternative is that
+ * renaming or dropping the binding leaves a public, unauthenticated path that
+ * makes an outbound request per miss running with no ceiling at all, and
+ * nothing from outside would show it. The cost of being wrong this way is
+ * bounded and visible: the app already treats an unreachable `/adhoc` as "this
+ * community will wait for the next run", the ranking is untouched, and the
+ * smoke check reads the 503 and refuses to record the publish as successful.
+ */
+export async function refuseOverRate(
+  request: Request,
+  limiter: RateLimiter | undefined,
+): Promise<Response | null> {
+  if (!limiter) return json({ error: 'unavailable' }, 503);
+
+  try {
+    const { success } = await limiter.limit({ key: rateKey(request) });
+    return success ? null : json({ error: 'rate_limited' }, 429);
+  } catch (error) {
+    // Named, because a silent 503 here is indistinguishable from the binding
+    // being absent, and the two have different fixes. Workers observability is
+    // enabled in the manifest, so this reaches the log without a dependency.
+    console.error(`adhoc rate limiter unavailable: ${(error as Error).message}`);
+    return json({ error: 'unavailable' }, 503);
+  }
+}
+
+/**
+ * The bucket one caller is metered in.
+ *
+ * A single IPv6 address is the wrong unit: the smallest block handed to one
+ * subscriber is a /64, so metering the full address gives that one subscriber
+ * 2^64 buckets and no ceiling at all. Truncating to the first four hextets
+ * meters the subscriber rather than the address they happened to send from.
+ * IPv4 has no equivalent slack and is metered whole.
+ */
+export function rateKey(request: Request): string {
+  // Cloudflare sets this on every edge request. An absent header puts all such
+  // callers in one bucket, which errs toward refusing rather than toward an
+  // unmetered path — and a caller that could suppress it could equally forge it.
+  const address = request.headers.get('cf-connecting-ip');
+  if (!address) return 'unattributed';
+  return address.includes(':') ? ipv6Prefix(address) : address;
+}
+
+/**
+ * The /64 an IPv6 address sits in, expanded so the boundary is where it looks.
+ *
+ * Cloudflare sends the compressed form, and `::` stands for a run of zero groups
+ * whose length depends on the rest of the address — so truncating the string as
+ * written would cut `2001:db8::1` at the wrong place and hand the caller their
+ * whole address back. Expanding first is what makes the fourth group actually
+ * the fourth group.
+ */
+function ipv6Prefix(address: string): string {
+  const [head, tail = ''] = address.split('::');
+  const headGroups = head ? head.split(':') : [];
+  const tailGroups = tail ? tail.split(':') : [];
+  const elided = address.includes('::')
+    ? Math.max(8 - headGroups.length - tailGroups.length, 0)
+    : 0;
+
+  return [...headGroups, ...Array<string>(elided).fill('0'), ...tailGroups]
+    .slice(0, 4)
+    .map((group) => group.padStart(4, '0'))
+    .join(':');
+}
+
+/**
+ * `run_worker_first` in `wrangler.toml` is the routing authority: it sends
+ * `/adhoc` here and every other request straight to the asset server without
+ * spending a Worker invocation. So in a correct deployment this only ever sees
+ * `/adhoc`, and the delegation below never runs.
+ *
+ * It exists anyway because the failure it covers is total — a `run_worker_first`
+ * pattern that stops matching would otherwise route the whole site into a
+ * handler that answers every path with `invalid_community`.
+ */
 export default {
-  fetch: (request: Request) => handleRequest(request),
+  async fetch(request: Request, env: AdhocEnv): Promise<Response> {
+    if (new URL(request.url).pathname !== ADHOC_PATH) return env.ASSETS.fetch(request);
+
+    // Ahead of validation, not after it: rejecting a malformed identifier is
+    // cheap for this Worker but not free, and an attacker sending nothing but
+    // malformed identifiers would otherwise pay no toll at all.
+    return (await refuseOverRate(request, env.ADHOC_RATE_LIMIT)) ?? handleRequest(request);
+  },
 };

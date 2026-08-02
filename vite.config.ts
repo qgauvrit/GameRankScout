@@ -39,6 +39,11 @@ export default defineConfig({
       'src/**/*.test.ts',
       'src/**/*.test.tsx',
       'worker/**/*.test.ts',
+      // The deploy-time guards live here — the smoke check and the publish
+      // recorder. They are scripts because they need a live deployment or a
+      // real file, but their decisions are ordinary logic, and a guard nothing
+      // exercises is a guard that reports whatever it was last written to say.
+      'scripts/**/*.test.ts',
       // The fixtures themselves are checked for anything that should not be in
       // a public repository, so this pattern has to reach outside src/.
       'test/**/*.test.ts',

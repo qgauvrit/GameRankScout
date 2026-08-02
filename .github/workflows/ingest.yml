@@ -25,6 +25,12 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    # The publish job gates on the sweep step's own outcome rather than the
+    # job's. A run can sweep for hours, produce a good corpus, and then fail
+    # its report push against a concurrent commit — the corpus is still good
+    # and is the whole point of the run.
+    outputs:
+      corpus: ${{ steps.ingest.outcome }}
     # A full sweep is paced to stay inside every source's rate limits (R7), so
     # it is slow by design: one listing request per community per window at 30s
     # spacing, plus a metadata lookup for every game that has not been seen
@@ -75,14 +81,11 @@ jobs:
           GRS_REPORT_PATH: data/run-report.json
         run: npm run ingest
 
-      - name: Build app with the fresh corpus
-        if: success()
-        run: npm run build
-
-      # Uploaded before the commit, and keyed off the ingest step rather than
-      # overall job success. A run can sweep for an hour, publish a good corpus,
-      # and then lose a push race against a concurrent commit — the artifacts it
-      # produced are still good, and are the whole point of the run.
+      # This job does not build. Its checkout is taken before a sweep that runs
+      # for up to five hours, so anything built here compiles code that may be
+      # hours behind the default branch — deploying it would silently revert
+      # whatever landed meanwhile. The publish job below builds instead, from a
+      # fresh checkout, and this artifact is the only thing it needs from here.
       - name: Upload corpus as a deployment artifact
         if: steps.ingest.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -91,12 +94,15 @@ jobs:
           path: public/corpus.json
           retention-days: 7
 
-      - name: Upload built site
-        if: steps.ingest.outcome == 'success'
+      # Uploaded so the publish job stamps its outcome onto this run's report
+      # rather than whatever the default branch happened to hold when it checked
+      # out — which is a different file whenever the push below loses its race.
+      - name: Upload the run report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: site
-          path: dist
+          name: run-report
+          path: data/run-report.json
           retention-days: 7
 
       # The commit is the heartbeat. The host disables a schedule after 60 days
@@ -142,3 +148,224 @@ jobs:
             echo "::error::public/corpus.json is tracked; the corpus must never be committed."
             exit 1
           fi
+
+  # Publishing is a separate job because the sweep's checkout goes stale. The
+  # sweep runs up to five hours from a checkout taken at its first step, so a
+  # build at the end of it compiles whatever the default branch held that
+  # morning — and a deploy of that would quietly revert every change that landed
+  # during the sweep, until the next run. This job takes a fresh checkout and
+  # uses the sweep only for its corpus.
+  publish:
+    needs: ingest
+    # The sweep step's own outcome, not the job's: a good corpus should still
+    # reach readers when a later step in that job failed. `!cancelled()` rather
+    # than `always()` so cancelling the run still stops the deploy — and wrapped
+    # in ${{ }} because a bare leading `!` is a YAML tag indicator.
+    if: ${{ !cancelled() && needs.ingest.outputs.corpus == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The deploy credential belongs here rather than in repository secrets, so
+    # it can be restricted to the default branch. A repository secret is
+    # readable by every workflow this repository runs, and this repository is
+    # public: a workflow step that prints the token is one merged pull request
+    # away.
+    #
+    # Nothing in this file can tell the two scopes apart — environment secrets
+    # silently fall back to repository ones of the same name. So the names below
+    # are deliberately ones that should exist *only* on this environment
+    # (DEPLOY_, not the generic CLOUDFLARE_API_TOKEN a repository secret would
+    # likely be called). Created in the wrong place, they resolve to empty and
+    # the deploy fails loudly rather than quietly working with a credential
+    # every other workflow can read.
+    environment: production
+
+
+    # Both deploy paths share one group so they can never interleave. Only this
+    # one exists today; the code-triggered path is deferred, and will join it.
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+
+    # Write, because this job commits the publish outcome into the run report.
+    # The checkout below does not persist that token into .git/config, so it is
+    # absent while npm ci runs install scripts and while wrangler holds the
+    # deploy credential; the push step supplies it explicitly instead.
+    permissions:
+      contents: write
+
+    steps:
+      # `ref` is load-bearing. Without it checkout resolves `github.sha` — the
+      # commit the schedule fired on, which is the same stale commit the sweep
+      # job started from, and the whole point of this job would be lost.
+      # Checking out by branch name resolves the tip as it stands now.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          # Otherwise the contents:write token sits in .git/config for every
+          # later step, including npm ci's install scripts and the deploy.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The corpus is never committed (KTD11), so a clean checkout has none and
+      # a deploy replaces the whole asset set. Without this the site would go
+      # live with no ranking at all.
+      - name: Fetch the corpus this run produced
+        uses: actions/download-artifact@v4
+        with:
+          name: corpus
+          path: public
+
+      # This run's report, so the publish outcome cannot be recorded against a
+      # previous run's.
+      - name: Fetch this run's report
+        uses: actions/download-artifact@v4
+        with:
+          name: run-report
+          path: data
+
+      # The tip this job checked out is not necessarily the commit CI last went
+      # green on — a red default branch is reachable, and `vite build` does not
+      # type check. Failing here skips the deploy and leaves the live site alone.
+      - name: Lint and test
+        run: npm run lint && npm test
+
+      # The sweep produced this corpus hours ago against whatever schema version
+      # the tree held then. If a change bumped SCHEMA_VERSION meanwhile, the app
+      # rejects the corpus and every reader gets an empty ranking from a
+      # deployment that looks healthy from outside.
+      - name: Refuse a corpus this tree cannot read
+        run: npx tsx scripts/assert-corpus-version.ts public/corpus.json
+
+      - name: Build
+        id: build
+        run: npm run build
+
+      # Gated on the build, not the sweep. The build step above has no explicit
+      # condition, so a failure there skips this — but naming the dependency
+      # keeps it true if anyone adds one later. A partial dist/ deployed over a
+      # working site is the failure this guards.
+      # Before the deploy, and with always(), because a bare `if:` carries an
+      # implicit success() — so a failed smoke check would otherwise skip the
+      # recovery artifact at the exact moment it is wanted.
+      - name: Upload the built site
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 7
+
+      - name: Deploy
+        id: deploy
+        if: steps.build.outcome == 'success'
+        env:
+          # Named for the environment they live on, not for the tool that reads
+          # them — see the `environment:` comment above for why the distinction
+          # is load-bearing.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DEPLOY_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DEPLOY_CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      # `wrangler deploy` reports success as long as the upload completed, so
+      # the three ways a deploy silently breaks — no shell, no corpus in the
+      # asset set, /adhoc no longer routed to the Worker — are only visible
+      # from outside. Reported through its exit status so the recording step
+      # below still runs.
+      #
+      # The corpus timestamp and the bundle path are passed in because every
+      # check below would also pass against the deployment that was already
+      # live. Both are read from what this job just deployed — the corpus from
+      # the artifact, the bundle name from the shell it built — so a green
+      # result names those bytes and not a deploy that silently never took
+      # effect. Together they cover both halves: the data and the code.
+      - name: Smoke-check the deployment
+        id: smoke
+        if: steps.deploy.outcome == 'success'
+        shell: bash
+        env:
+          DEPLOY_ORIGIN: ${{ vars.DEPLOY_ORIGIN }}
+        run: |
+          if [ -z "$DEPLOY_ORIGIN" ]; then
+            echo "::error::The DEPLOY_ORIGIN variable is not set, so there is nothing to check."
+            exit 1
+          fi
+          # -e fails on a null or absent field rather than passing "null" along
+          # as the value the live corpus is expected to match.
+          generated_at="$(jq -er .generatedAt public/corpus.json)"
+          # Vite hashes this filename from the built code, so it is the built
+          # code's identity. Empty means the build changed shape rather than
+          # that the shell is fine, so it fails here instead of downstream.
+          bundle="$(grep -oE '<script[^>]+src="[^"]+"' dist/index.html | grep -oE '/assets/[^"]+' | head -1)"
+          if [ -z "$bundle" ]; then
+            echo "::error::No module script found in the built dist/index.html."
+            exit 1
+          fi
+          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at" "$bundle"
+
+      # `always()` is the whole point. Without it GitHub skips this step once
+      # the deploy fails — which is precisely the case R8 exists to surface, and
+      # the report would go on claiming the publish was never attempted.
+      - name: Record the publish outcome
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          case "$DEPLOY_OUTCOME" in
+            success)
+              # A deploy that uploaded but does not serve is a failed publish,
+              # not a successful one.
+              # Only a verified check yields published. A cancelled or skipped
+              # smoke step means nobody confirmed the deployment serves.
+              if [ "$SMOKE_OUTCOME" = "success" ]; then
+                outcome=published
+              else
+                outcome=smoke_failed
+              fi
+              ;;
+            failure) outcome=deploy_failed ;;
+            # Skipped or cancelled: the build failed, so no deploy was reached.
+            *)       outcome=not_attempted ;;
+          esac
+          npx tsx scripts/record-publish.ts data/run-report.json "$outcome"
+
+      # The sweep already committed this file as the heartbeat (KTD6); this adds
+      # what only the publish job knows. A failed publish therefore lands in the
+      # same artifact a failed run does, without a second mechanism.
+      - name: Commit the publish outcome
+        if: always()
+        # Explicit, because the redaction pipe below would otherwise report
+        # sed's exit status instead of git's — every push would look successful.
+        # GitHub runs `shell: bash` as `bash --noprofile --norc -eo pipefail`.
+        shell: bash
+        env:
+          # The checkout persisted no credentials, so the remote is supplied
+          # here — the one step that needs it, and never alongside the deploy
+          # token. Interpolated into a URL, never echoed.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/run-report.json
+          if git diff --cached --quiet; then
+            echo "Publish outcome unchanged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            if git push "$remote" "HEAD:${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g"; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
+            git pull --rebase --autostash "$remote" "${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g" || exit 1
+          done
+          echo "::error::Could not push the publish outcome after 3 attempts."
+          exit 1

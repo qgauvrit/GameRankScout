@@ -1,15 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  CACHE_TTL_MS,
   CommunityNotFoundError,
   InvalidCommunityError,
-  MAX_ENTRIES,
   fetchCommunity,
   handleRequest,
   memoryCache,
+  refuseOverRate,
   resolveTarget,
 } from './adhoc.js';
+import worker from './adhoc.js';
+import { ADHOC_PATH, CACHE_TTL_MS, MAX_ENTRIES } from './config.js';
+import { RANKING_WINDOWS } from '../src/corpus/schema.js';
 import type { AdhocDeps } from './adhoc.js';
 
 const REDDIT_FEED = readFileSync('test/fixtures/reddit/top-year.xml', 'utf8');
@@ -197,7 +199,13 @@ describe('the HTTP surface', () => {
     const response = await handleRequest(url('source=reddit&community=r/cozygames'), deps(REDDIT_FEED));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    // The app is served by this same Worker, so the only legitimate caller is
+    // same-origin. A wildcard grant here would be a CORS-bypassing relay into
+    // the allowlisted sources for any third-party page.
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    // The error bodies echo the caller's identifier back, so the response must
+    // never be sniffed as anything but JSON.
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     const body = (await response.json()) as { community: string; items: unknown[] };
     expect(body.community).toBe('r/cozygames');
     expect(body.items.length).toBeGreaterThan(0);
@@ -230,5 +238,202 @@ describe('the HTTP surface', () => {
     const response = await handleRequest(url('community=r/cozygames'), deps('', 503));
 
     expect(response.status).toBe(502);
+  });
+});
+
+describe('routing between the handler and the static site', () => {
+  /**
+   * `run_worker_first` in `wrangler.toml` is what actually routes production
+   * traffic, so in a correct deployment the delegation below never runs. These
+   * cover the fallback anyway: the failure it absorbs is total, and it is the
+   * only part of the routing that can be exercised without a deployment.
+   */
+  function env(limit: () => Promise<{ success: boolean }> = async () => ({ success: true })) {
+    const assets = vi.fn(async () => new Response('<!doctype html>shell', { status: 200 }));
+    return {
+      assets,
+      binding: { ASSETS: { fetch: assets }, ADHOC_RATE_LIMIT: { limit } },
+    };
+  }
+
+  it('keeps /adhoc in the handler and away from the asset store', async () => {
+    const { assets, binding } = env();
+
+    // An invalid window fails before any outbound fetch, so this exercises the
+    // routing decision without reaching the network.
+    const response = await worker.fetch(
+      new Request('https://grs.test/adhoc?community=r/cozygames&window=forever'),
+      binding,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid_window' });
+    expect(assets).not.toHaveBeenCalled();
+  });
+
+  it('serves the site root from the asset store', async () => {
+    const { assets, binding } = env();
+
+    const response = await worker.fetch(new Request('https://grs.test/'), binding);
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(await response.text()).toContain('shell');
+  });
+
+  it('sends an unknown route to the asset store rather than the handler', async () => {
+    const { assets, binding } = env();
+
+    // Route-shaped: no extension. Whether an asset-shaped 404 should stay a 404
+    // is `not_found_handling`'s call, and this assertion holds either way.
+    const response = await worker.fetch(new Request('https://grs.test/settings/communities'), binding);
+
+    expect(assets).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+  });
+
+  it('routes on the same path the wrangler manifest sends to the Worker', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+
+    // Two files have to agree on one string; a drift here silently routes the
+    // whole site into the handler or the handler into the asset store.
+    expect(manifest).toContain(`run_worker_first = ["${ADHOC_PATH}"]`);
+  });
+});
+
+describe('the ceiling on a path anyone can call', () => {
+  const hit = new Request('https://grs.test/adhoc?community=r/cozygames', {
+    headers: { 'cf-connecting-ip': '203.0.113.7' },
+  });
+
+  const limiter = (success: boolean, seen: { key?: string } = {}) => ({
+    async limit({ key }: { key: string }) {
+      seen.key = key;
+      return { success };
+    },
+  });
+
+  it('lets a caller under the ceiling through', async () => {
+    expect(await refuseOverRate(hit, limiter(true))).toBeNull();
+  });
+
+  it('refuses a caller over it, without contacting any source', async () => {
+    const response = await refuseOverRate(hit, limiter(false));
+
+    expect(response?.status).toBe(429);
+    expect(await response?.json()).toEqual({ error: 'rate_limited' });
+  });
+
+  it('meters by caller address rather than in aggregate', async () => {
+    // Otherwise one abusive caller would lock out every reader at once.
+    const seen: { key?: string } = {};
+    await refuseOverRate(hit, limiter(true, seen));
+
+    expect(seen.key).toBe('203.0.113.7');
+  });
+
+  describe('the bucket an IPv6 caller lands in', () => {
+    const keyFor = async (address: string) => {
+      const seen: { key?: string } = {};
+      await refuseOverRate(
+        new Request('https://grs.test/adhoc', { headers: { 'cf-connecting-ip': address } }),
+        limiter(true, seen),
+      );
+      return seen.key;
+    };
+
+    it('meters the subscriber, not the address they picked', async () => {
+      // The smallest block one subscriber is handed is a /64. Metering the full
+      // address would give that subscriber 2^64 buckets and no ceiling at all.
+      expect(await keyFor('2001:db8:abcd:1234::1')).toBe(
+        await keyFor('2001:db8:abcd:1234:ffff:ffff:ffff:ffff'),
+      );
+    });
+
+    it('keeps separate subscribers apart', async () => {
+      expect(await keyFor('2001:db8:abcd:1234::1')).not.toBe(await keyFor('2001:db8:abcd:9999::1'));
+    });
+
+    it('finds the boundary in a compressed address', async () => {
+      // Cloudflare sends the compressed form, where `::` stands for a run of
+      // zero groups whose length depends on the rest. Cutting the string as
+      // written would hand `2001:db8::1` its whole address back.
+      expect(await keyFor('2001:db8::1')).toBe('2001:0db8:0000:0000');
+      expect(await keyFor('2001:0db8:0000:0000:0000:0000:0000:0001')).toBe('2001:0db8:0000:0000');
+      expect(await keyFor('::1')).toBe('0000:0000:0000:0000');
+    });
+
+    it('leaves IPv4 whole', async () => {
+      // No equivalent slack: one address is one caller.
+      expect(await keyFor('203.0.113.7')).toBe('203.0.113.7');
+    });
+  });
+
+  it('puts callers with no address into one shared bucket', async () => {
+    const seen: { key?: string } = {};
+    await refuseOverRate(new Request('https://grs.test/adhoc'), limiter(true, seen));
+
+    // Erring toward refusing. A caller that could suppress the header would
+    // otherwise get a bucket of their own for free.
+    expect(seen.key).toBe('unattributed');
+  });
+
+  it('refuses everyone when the binding is gone', async () => {
+    // The failure this exists for: rename the binding in wrangler.toml and the
+    // path would otherwise go on serving, unmetered, with nothing to show it.
+    const response = await refuseOverRate(hit, undefined);
+
+    expect(response?.status).toBe(503);
+  });
+
+  it('refuses everyone when the limiter itself fails', async () => {
+    const broken = {
+      async limit(): Promise<{ success: boolean }> {
+        throw new Error('rate limiting unavailable');
+      },
+    };
+
+    expect((await refuseOverRate(hit, broken))?.status).toBe(503);
+  });
+
+  it('meters /adhoc and leaves static assets alone', async () => {
+    // Asset requests never reach the Worker in a correct deployment, and
+    // spending the reader's budget on the site itself would be a bug either way.
+    const metered = vi.fn(async () => ({ success: false }));
+    const assets = vi.fn(async () => new Response('<!doctype html>shell', { status: 200 }));
+    const binding = { ASSETS: { fetch: assets }, ADHOC_RATE_LIMIT: { limit: metered } };
+
+    await worker.fetch(new Request('https://grs.test/'), binding);
+    expect(metered).not.toHaveBeenCalled();
+    expect(assets).toHaveBeenCalledOnce();
+
+    const refused = await worker.fetch(new Request('https://grs.test/adhoc'), binding);
+    expect(metered).toHaveBeenCalledOnce();
+    expect(refused.status).toBe(429);
+  });
+
+  it('declares a binding the Worker can actually receive', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+
+    // A binding the manifest names differently is a binding the Worker never
+    // receives — and this one fails closed, so the whole path would go dark.
+    // The name alone is not enough: dropping `type` or changing it to another
+    // kind leaves the name in place and the ceiling gone.
+    expect(manifest).toMatch(
+      /\[\[unsafe\.bindings\]\]\nname = "ADHOC_RATE_LIMIT"\ntype = "ratelimit"\n(?:#[^\n]*\n)*namespace_id = "[^"]+"\nsimple = \{ limit = \d+, period = \d+ \}/,
+    );
+  });
+
+  it('leaves an ordinary reader room for every window of every community', () => {
+    const manifest = readFileSync('wrangler.toml', 'utf8');
+    const limit = Number(/simple = \{ limit = (\d+),/.exec(manifest)?.[1]);
+
+    // One added community costs one request per ranking window, and the app
+    // re-pulls all of them concurrently whenever a corpus loads. A ceiling
+    // counted in communities rather than requests throttles a real reader on a
+    // healthy deployment — and adding a fifth window would silently do it again.
+    const communitiesPerLoad = limit / RANKING_WINDOWS.length;
+
+    expect(Number.isInteger(communitiesPerLoad)).toBe(true);
+    expect(communitiesPerLoad).toBeGreaterThanOrEqual(20);
   });
 });

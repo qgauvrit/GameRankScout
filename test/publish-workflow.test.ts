@@ -223,10 +223,18 @@ describe('the push path publishes without waiting for a sweep', () => {
     // workflow runs, which is the only reason the sweep's own report commits do
     // not each trigger a publish. Swapping in a PAT to satisfy a ruleset would
     // silently start firing one per sweep.
-    const pushStep = ingestWorkflow.slice(ingestWorkflow.indexOf('Commit run report'));
+    // Scoped to the comment block above the push step. The previous form was
+    // `pushStep.slice(0, 0) + ingestWorkflow` — the empty string plus the entire
+    // file — so it asserted the text existed *somewhere*, and would have passed
+    // with the rationale sitting in a completely unrelated step.
+    const rationale = ingestWorkflow.slice(
+      ingestWorkflow.indexOf('This push must keep using'),
+      ingestWorkflow.indexOf('- name: Commit run report'),
+    );
 
-    expect(pushStep.slice(0, 0) + ingestWorkflow).toMatch(/do not create workflow runs/);
-    expect(ingestWorkflow).toMatch(/bypass actor/);
+    expect(rationale).not.toBe('');
+    expect(rationale).toMatch(/do not create workflow runs/);
+    expect(rationale).toMatch(/bypass actor/);
   });
 });
 
@@ -279,5 +287,81 @@ describe('a compromised action tag cannot reach the deploy credential', () => {
     expect(pin).not.toBeNull();
     const [major, minor] = [Number(pin![1]), Number(pin![2])];
     expect(major > 4 || (major === 4 && minor >= 1)).toBe(true);
+  });
+});
+
+describe('the deploy identity reaches the check that uses it', () => {
+  it('stamps between the build and the deploy', () => {
+    // Written into `dist/`, so before the build it would be overwritten and
+    // after the deploy it would never be uploaded. Either way the identity
+    // check would compare against something the deployment does not serve.
+    const build = publishWorkflow.indexOf('- name: Build');
+    const stamp = publishWorkflow.indexOf('- name: Stamp the build');
+    const deploy = publishWorkflow.indexOf('- name: Deploy');
+
+    expect(build).toBeGreaterThan(-1);
+    expect(stamp).toBeGreaterThan(build);
+    expect(deploy).toBeGreaterThan(stamp);
+  });
+
+  it('passes all four identities to the smoke check', () => {
+    // Dropping an argument leaves the suite green and surfaces only as smoke.ts
+    // exiting 2 at deploy time — the same shape as a check wired to nothing,
+    // which runSmoke's own coverage guards against internally but not here.
+    const invocation = /npx tsx scripts\/smoke\.ts[^\n]*/.exec(publishWorkflow)?.[0] ?? '';
+
+    expect(invocation).not.toBe('');
+    for (const arg of ['"$DEPLOY_ORIGIN"', '"$generated_at"', '"$bundle"', '"$EXPECTED_COMMIT"']) {
+      expect(invocation, `smoke.ts is not passed ${arg}`).toContain(arg);
+    }
+  });
+
+  it('stamps from the checked-out commit, not the queued one', () => {
+    const stampStep = publishWorkflow.slice(
+      publishWorkflow.indexOf('- name: Stamp the build'),
+      publishWorkflow.indexOf('- name: Upload the built site'),
+    );
+
+    expect(stampStep).not.toBe('');
+    expect(stampStep).toMatch(/git rev-parse HEAD/);
+    expect(stampStep).not.toMatch(/GITHUB_SHA/);
+  });
+});
+
+describe('the corpus resolver trusts provenance, not a branch name', () => {
+  it('requires the artifact to come from this repository', () => {
+    // A fork's default branch is also called `main`, so `head_branch` alone is
+    // a filter the fork controls — and these bytes are deployed to the public
+    // site. Nothing produces a corpus artifact from a fork today; this makes
+    // that an enforced rule rather than an accident of which workflows exist.
+    const resolveStep = publishWorkflow.slice(
+      publishWorkflow.indexOf("Resolve which run's corpus to deploy"),
+      publishWorkflow.indexOf('Fetch the corpus to deploy'),
+    );
+
+    expect(resolveStep).toMatch(/head_repository_id == \.workflow_run\.repository_id/);
+  });
+});
+
+describe('the age gate cannot pass by failing to parse', () => {
+  const ageStep = publishWorkflow.slice(
+    publishWorkflow.indexOf('Refuse a corpus too old'),
+    publishWorkflow.indexOf('Refuse a corpus this tree cannot read'),
+  );
+
+  it('parses the timestamp in its own assignment', () => {
+    // Inline in the arithmetic, an unparseable timestamp makes `date` print
+    // nothing, `$(( ))` errors *without* aborting under `set -e`, age_hours
+    // ends up empty, and `[ "" -gt 72 ]` is false — so the gate passed having
+    // refused nothing. Reproduced before this was changed.
+    expect(ageStep).toMatch(/if ! generated_epoch="\$\(date -u -d "\$generated_at" \+%s\)"/);
+    expect(ageStep).not.toMatch(/\$\(\( \( \$\(date -u \+%s\) - \$\(date/);
+  });
+
+  it('names the unparseable case rather than falling through', () => {
+    const guard = ageStep.slice(ageStep.indexOf('if ! generated_epoch'));
+
+    expect(guard).toMatch(/::error::/);
+    expect(guard.slice(0, guard.indexOf('age_hours='))).toMatch(/exit 1/);
   });
 });

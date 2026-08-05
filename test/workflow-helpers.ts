@@ -17,7 +17,9 @@ const DIR = '.github/workflows';
 
 export const workflowNames = (): string[] =>
   readdirSync(DIR)
-    .filter((name) => name.endsWith('.yml'))
+    // Both extensions: GitHub honours `.yaml` too, and a guard that silently
+    // skips a whole workflow is worse than no guard.
+    .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
     .sort();
 
 export const readWorkflow = (name: string): string => readFileSync(`${DIR}/${name}`, 'utf8');
@@ -39,15 +41,6 @@ export function job(source: string, name: string): string | null {
   if (start === -1) return null;
   const rest = source.slice(start + 1);
   const next = rest.search(/\n {2}[a-z][a-z-]*:\n/);
-  return next === -1 ? rest : rest.slice(0, next);
-}
-
-/** One named step's text, up to the start of the next step. */
-export function step(source: string, name: string): string | null {
-  const start = source.indexOf(`- name: ${name}`);
-  if (start === -1) return null;
-  const rest = source.slice(start + 1);
-  const next = rest.search(/\n {6}- (?:name|uses):/);
   return next === -1 ? rest : rest.slice(0, next);
 }
 

@@ -128,12 +128,21 @@ jobs:
             exit 0
           fi
 
+          # Same-repository only, not merely same branch name. A fork's default
+          # branch is also called `main`, so `head_branch` alone is a filter the
+          # fork controls — and this artifact's bytes are deployed to the public
+          # site and read by every reader. Nothing today produces a `corpus`
+          # artifact from a fork (only the sweep uploads one, and it never runs
+          # on `pull_request`), so this is not a hole being closed but an
+          # accident being made into a rule: the next workflow that uploads an
+          # artifact from a PR must not silently become a deploy source.
+          #
           # Newest by created_at rather than by list position: the REST listing
           # is not documented as sorted, and taking the first element would be
           # trusting an accident.
           run_id="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
             -f name=corpus -f per_page=100 \
-            --jq "[.artifacts[] | select(.expired == false) | select(.workflow_run.head_branch == \"${BRANCH}\")] | sort_by(.created_at) | last | .workflow_run.id // empty")"
+            --jq "[.artifacts[] | select(.expired == false) | select(.workflow_run.head_branch == \"${BRANCH}\") | select(.workflow_run.head_repository_id == .workflow_run.repository_id)] | sort_by(.created_at) | last | .workflow_run.id // empty")"
 
           if [ -z "$run_id" ]; then
             echo "::error::No unexpired 'corpus' artifact exists for ${BRANCH}. Artifacts are kept 7 days, so this means no sweep has succeeded in that window. The remedy is a sweep: run the Ingest workflow, or wait for the next scheduled one. Refusing to deploy rather than publishing a site with no ranking."
@@ -216,7 +225,18 @@ jobs:
           MAX_AGE_HOURS: '72'
         run: |
           generated_at="$(jq -er .generatedAt public/corpus.json)"
-          age_hours=$(( ( $(date -u +%s) - $(date -u -d "$generated_at" +%s) ) / 3600 ))
+
+          # Parsed in its own assignment so `set -e` sees a failure. Inline in
+          # the arithmetic below, an unparseable timestamp makes `date` print
+          # nothing, `$(( ... -  ))` reports "operand expected" *without*
+          # aborting, `age_hours` ends up empty, and `[ "" -gt 72 ]` is false —
+          # so the gate would pass having refused nothing. Every other guard in
+          # this job fails closed; this one has to as well.
+          if ! generated_epoch="$(date -u -d "$generated_at" +%s)"; then
+            echo "::error::The corpus timestamp ${generated_at} could not be parsed, so its age is unknown. Refusing to publish rather than assuming it is current."
+            exit 1
+          fi
+          age_hours=$(( ( $(date -u +%s) - generated_epoch ) / 3600 ))
           echo "Corpus generated at ${generated_at} (${age_hours}h ago)."
           if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
             echo "::error::The newest available corpus is ${age_hours}h old, past the ${MAX_AGE_HOURS}h limit. That means the sweep has been failing, and the fix is there rather than here — check the most recent Ingest runs. Refusing to publish a ranking this stale."
@@ -400,16 +420,25 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
+          # 9 means "nothing to commit", which is a clean exit; any other
+          # non-zero is a real failure. Collapsing both into one status made a
+          # failed `git add` or `git commit` report the run as successful.
           commit_outcome() {
-            git add data/run-report.json
+            git add data/run-report.json || return 1
             if git diff --cached --quiet; then
               echo "Publish outcome unchanged; nothing to commit."
-              return 1
+              return 9
             fi
-            git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+            git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)" || return 1
           }
 
-          commit_outcome || exit 0
+          # `if` rather than a bare call: under `set -e` a function returning
+          # non-zero as a simple command aborts the step before it can be read.
+          if ! commit_outcome; then
+            rc=$?
+            [ "$rc" -eq 9 ] && exit 0
+            exit 1
+          fi
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
           # Replaying rather than rebasing, for the same reason the sweep's own
@@ -430,7 +459,11 @@ jobs:
             git reset --hard FETCH_HEAD || exit 1
             cp "${RUNNER_TEMP}/run-report.json" data/run-report.json
 
-            commit_outcome || exit 0
+            if ! commit_outcome; then
+              rc=$?
+              [ "$rc" -eq 9 ] && exit 0
+              exit 1
+            fi
           done
           echo "::error::Could not push the publish outcome after 3 attempts."
           exit 1

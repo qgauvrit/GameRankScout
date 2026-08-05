@@ -15,10 +15,19 @@ import { allWorkflows, job, publishCallers, readWorkflow } from './workflow-help
 const publishWorkflow = readWorkflow('publish.yml');
 
 describe('the two publish paths cannot collide', () => {
-  it('has more than one caller, so these assertions mean something', () => {
+  it('resolves the callers it is about to iterate', () => {
     // The guard on the guard: every assertion below is a `for` over the callers,
     // and every one of them passes vacuously if the list is empty.
-    expect(publishCallers().length).toBeGreaterThan(1);
+    //
+    // Deliberately not "more than one". The recovery path for a misbehaving
+    // trigger is to delete `publish-on-push.yml`, and demanding two callers
+    // would turn that one-file rollback into a red suite at exactly the moment
+    // someone is trying to stop a bad deploy. The sweep is the caller that must
+    // always exist.
+    const names = publishCallers().map(([name]) => name);
+
+    expect(names.length).toBeGreaterThan(0);
+    expect(names).toContain('ingest.yml');
   });
 
   it('puts every caller in the same literal concurrency group', () => {
@@ -102,12 +111,26 @@ describe('nothing fork-influenced can reach the publish job', () => {
     }
   });
 
-  it('lists those events nowhere in the allowlist', () => {
-    const allowlist = /case "\$EVENT" in\n\s+([^)]+)\)/.exec(publishWorkflow)?.[1] ?? '';
+  it('lists those events nowhere in the allowlist, and lists the real ones', () => {
+    // The whole case body, not just its first arm: matching to the first `)`
+    // stopped at `schedule|workflow_dispatch|push)` and never saw the rest, so
+    // an arm added below it was invisible to the negative assertions.
+    const allowlist = /case "\$EVENT" in\n([\s\S]*?)\n\s+esac/.exec(publishWorkflow)?.[1] ?? '';
 
     expect(allowlist).not.toBe('');
     expect(allowlist).not.toMatch(/workflow_run/);
     expect(allowlist).not.toMatch(/pull_request_target/);
+
+    // Positive too, and asserted against the matching *arm* rather than the
+    // case body. Matching the body was itself the bug this pair exists to
+    // catch: the `*)` branch's error message names all three events in prose,
+    // so deleting `push` from the arm — which breaks the entire feature — left
+    // a `\bpush\b` assertion green.
+    const admitted = (/case "\$EVENT" in\n\s+([a-z_|]+)\)/.exec(publishWorkflow)?.[1] ?? '').split('|');
+
+    for (const event of ['schedule', 'workflow_dispatch', 'push']) {
+      expect(admitted, `${event} is not admitted`).toContain(event);
+    }
   });
 });
 
@@ -121,15 +144,23 @@ describe('every workflow that deploys or commits pins its checkout', () => {
   // silently inherit the exemption.
   const EXEMPT = new Set(['ci.yml']);
 
-  it('pins ref wherever a checkout is followed by a deploy or a push', () => {
+  it('pins ref on every checkout, not merely the first in each file', () => {
+    // Bounded to each step's own `with:` block. Slicing from the first checkout
+    // to end of file let one pinned checkout satisfy the assertion for every
+    // later unpinned one in the same workflow.
     for (const [name, source] of allWorkflows()) {
       if (EXEMPT.has(name)) continue;
-      if (!/uses: actions\/checkout@/.test(source)) continue;
 
-      const at = source.search(/uses: actions\/checkout@/);
-      expect(source.slice(at), `${name} does not pin its checkout ref`).toMatch(
-        /ref:\s*\$\{\{\s*github\.ref_name\s*\}\}/,
-      );
+      const checkouts = [
+        ...source.matchAll(/uses: actions\/checkout@[^\n]*\n((?:[ ]{8,}[^\n]*\n)*)/g),
+      ];
+
+      if (checkouts.length === 0) continue;
+      for (const match of checkouts) {
+        expect(match[1] ?? '', `${name} has a checkout that does not pin ref`).toMatch(
+          /ref:\s*\$\{\{\s*github\.ref_name\s*\}\}/,
+        );
+      }
     }
   });
 

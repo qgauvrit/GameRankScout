@@ -236,8 +236,11 @@ jobs:
     # takes no ref to pin.
     uses: ./.github/workflows/publish.yml
     with:
-      # Empty: a reusable workflow runs inside the calling run, so this run's
-      # own `corpus` artifact is already reachable without a lookup.
-      corpus_run_id: ''
+      # This run's own corpus, named explicitly. A reusable workflow runs inside
+      # the calling run so the artifact would also be reachable by default, but
+      # empty means "go and find the newest one" for the push path — and a sweep
+      # silently publishing some other run's corpus is exactly the confusion
+      # worth spending one interpolation to prevent.
+      corpus_run_id: ${{ github.run_id }}
       # This is the sweep, and the report describes a sweep.
       record_outcome: true

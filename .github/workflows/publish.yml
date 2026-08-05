@@ -102,14 +102,87 @@ jobs:
 
       - run: npm ci
 
+      # Which run's corpus to deploy. The sweep names its own; the push path
+      # has none of its own and asks for the newest one there is.
+      #
+      # Selected by *artifact*, never by the producing run's conclusion. That
+      # proxy is one this repository has already rejected once: `ingest.yml`
+      # exposes the sweep step's outcome rather than the job's, precisely
+      # because a run can produce a good corpus and then fail a later step —
+      # and now that publishing is part of that run, any publish failure makes
+      # the run unsuccessful too. Filtering on conclusion would therefore skip
+      # good corpora and walk backwards until it hit the retention wall. The
+      # artifact's existence already carries the predicate: the sweep uploads it
+      # only when the sweep step succeeded.
+      - name: Resolve which run's corpus to deploy
+        id: corpus
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUPPLIED: ${{ inputs.corpus_run_id }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ -n "$SUPPLIED" ]; then
+            echo "Deploying the corpus from run $SUPPLIED, as the caller specified."
+            echo "run_id=$SUPPLIED" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Newest by created_at rather than by list position: the REST listing
+          # is not documented as sorted, and taking the first element would be
+          # trusting an accident.
+          run_id="$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+            -f name=corpus -f per_page=100 \
+            --jq "[.artifacts[] | select(.expired == false) | select(.workflow_run.head_branch == \"${BRANCH}\")] | sort_by(.created_at) | last | .workflow_run.id // empty")"
+
+          if [ -z "$run_id" ]; then
+            echo "::error::No unexpired 'corpus' artifact exists for ${BRANCH}. Artifacts are kept 7 days, so this means no sweep has succeeded in that window. The remedy is a sweep: run the Ingest workflow, or wait for the next scheduled one. Refusing to deploy rather than publishing a site with no ranking."
+            exit 1
+          fi
+          echo "Deploying the newest swept corpus, from run ${run_id}."
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+
       # The corpus is never committed (KTD11), so a clean checkout has none and
       # a deploy replaces the whole asset set. Without this the site would go
       # live with no ranking at all.
-      - name: Fetch the corpus this run produced
+      #
+      # Extracted beside the workspace, not into it. GitHub's own guidance is to
+      # keep artifact extraction away from a workspace holding executable
+      # scripts, and the step below is the other half of that: an artifact is a
+      # zip whose member paths its producer chooses, so unpacking one straight
+      # into `public/` would put whatever it contains into the asset set
+      # `wrangler deploy` publishes.
+      - name: Fetch the corpus to deploy
         uses: actions/download-artifact@v4
         with:
           name: corpus
-          path: public
+          path: ${{ runner.temp }}/corpus-artifact
+          run-id: ${{ steps.corpus.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Take the corpus and nothing else
+        shell: bash
+        run: |
+          src="${RUNNER_TEMP}/corpus-artifact"
+
+          # Exactly one member, exactly that name. Anything else means the
+          # artifact is not what the sweep uploads, and the right response to
+          # that is to stop rather than to pick out the part that looks right.
+          # No `|| true`: a find that errors would otherwise report "nothing
+          # unexpected" and wave the artifact through, which is the failure this
+          # step exists to refuse.
+          unexpected="$(find "$src" -mindepth 1 ! -name corpus.json -printf '%P\n')"
+          if [ -n "$unexpected" ]; then
+            echo "::error::The corpus artifact carries members beyond corpus.json, which would reach the deployed asset set: ${unexpected}"
+            exit 1
+          fi
+          if [ ! -f "$src/corpus.json" ]; then
+            echo "::error::The corpus artifact does not contain corpus.json."
+            exit 1
+          fi
+
+          mkdir -p public
+          cp "$src/corpus.json" public/corpus.json
 
       # This run's report, so the publish outcome cannot be recorded against a
       # previous run's.
@@ -125,12 +198,45 @@ jobs:
       - name: Lint and test
         run: npm run lint && npm test
 
-      # The sweep produced this corpus hours ago against whatever schema version
+      # Two ways the resolved corpus can be wrong for this tree, both of which
+      # produce a deployment that looks healthy from outside.
+      #
+      # Age: the push path deploys whatever the last sweep left, so a run of
+      # failed sweeps would otherwise publish an ever-older ranking without
+      # anything saying so. Artifact retention is 7 days and the sweep is daily,
+      # so 72 hours is three missed sweeps — long enough to ride out a bad day,
+      # short enough that a stale ranking is a failure rather than a habit.
+      - name: Refuse a corpus too old to represent the ranking
+        shell: bash
+        env:
+          MAX_AGE_HOURS: '72'
+        run: |
+          generated_at="$(jq -er .generatedAt public/corpus.json)"
+          age_hours=$(( ( $(date -u +%s) - $(date -u -d "$generated_at" +%s) ) / 3600 ))
+          echo "Corpus generated at ${generated_at} (${age_hours}h ago)."
+          if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::The newest available corpus is ${age_hours}h old, past the ${MAX_AGE_HOURS}h limit. That means the sweep has been failing, and the fix is there rather than here — check the most recent Ingest runs. Refusing to publish a ranking this stale."
+            exit 1
+          fi
+
+      # Version: the sweep produced this corpus against whatever schema version
       # the tree held then. If a change bumped SCHEMA_VERSION meanwhile, the app
-      # rejects the corpus and every reader gets an empty ranking from a
-      # deployment that looks healthy from outside.
+      # rejects the corpus and every reader gets an empty ranking.
+      #
+      # On the push path this is expected and self-resolving rather than a
+      # defect: a commit that bumps SCHEMA_VERSION cannot publish until a sweep
+      # has produced a corpus at the new version. The plan asked for a neutral
+      # conclusion here so a bump would not produce a day of red runs — GitHub
+      # gives a workflow step no way to report neutral, so this fails instead
+      # and spends the message on saying it is expected and when it clears. A
+      # green run that deployed nothing would be the worse trade.
       - name: Refuse a corpus this tree cannot read
-        run: npx tsx scripts/assert-corpus-version.ts public/corpus.json
+        shell: bash
+        run: |
+          if ! npx tsx scripts/assert-corpus-version.ts public/corpus.json; then
+            echo "::error::This tree reads a different corpus schema than the newest swept corpus carries. If this commit bumped SCHEMA_VERSION, that is expected: the push path has no corpus at the new version until the next sweep produces one, and this will clear on its own after the next scheduled Ingest run. Nothing is broken and the live site is untouched."
+            exit 1
+          fi
 
       - name: Build
         id: build

@@ -119,6 +119,15 @@ jobs:
       # without repository activity and sends no notification when a run is
       # skipped, so every run commits its report — including a run that produced
       # no new evidence, and a run that failed (KTD6).
+      #
+      # This push must keep using `GITHUB_TOKEN`, and the reason is invisible:
+      # commits pushed with it do not create workflow runs. `publish-on-push.yml`
+      # fires on every push to this branch, so the moment this step switches to a
+      # PAT or a GitHub App token — the usual answer to a branch ruleset
+      # rejecting a bot push — every sweep would also trigger a full publish, and
+      # a run whose report lands mid-sweep would publish against a corpus that
+      # sweep has not finished producing. If a ruleset blocks this push, the fix
+      # is a bypass actor for `github-actions[bot]`, never a different token.
       - name: Commit run report
         if: always()
         shell: bash

@@ -11,6 +11,8 @@ import { readFileSync } from 'node:fs';
  */
 
 const publishWorkflow = readFileSync('.github/workflows/publish.yml', 'utf8');
+const pushWorkflow = readFileSync('.github/workflows/publish-on-push.yml', 'utf8');
+const ingestWorkflow = readFileSync('.github/workflows/ingest.yml', 'utf8');
 
 describe('the corpus is chosen by what exists, not by how its run ended', () => {
   const resolveStep = publishWorkflow.slice(
@@ -177,5 +179,53 @@ describe('the publish outcome is replayed onto the tip, never rebased onto it', 
 
     expect(gitCalls.length).toBeGreaterThan(0);
     for (const call of gitCalls) expect(call).toMatch(/sed "s\/\$\{GH_TOKEN\}\/\*\*\*\/g"/);
+  });
+});
+
+describe('the push path publishes without waiting for a sweep', () => {
+  it('fires only on the default branch, never on tags', () => {
+    // A bare `push:` also fires on tags, and a tag publish would deploy
+    // whatever commit it points at with no relation to what is on main.
+    expect(pushWorkflow).toMatch(/push:\n\s+branches: \[main\]/);
+  });
+
+  it('grants no write, because it commits nothing', () => {
+    // The caller's grant is the ceiling for the job it calls, so this is the
+    // control rather than a description of one.
+    const perms = pushWorkflow.slice(pushWorkflow.indexOf('permissions:'));
+
+    expect(perms).toMatch(/contents: read/);
+    expect(perms).not.toMatch(/contents: write/);
+  });
+
+  it('asks the publish job to find its own corpus and record nothing', () => {
+    expect(pushWorkflow).toMatch(/corpus_run_id: ''/);
+    expect(pushWorkflow).toMatch(/record_outcome: false/);
+  });
+
+  it('shares the sweep\'s literal concurrency group', () => {
+    // Not interpolated: inside a reusable workflow `github.workflow` resolves
+    // to the caller's name, so an interpolation would produce two groups and
+    // the two paths would race.
+    // Sliced from the publish job in each file: `ingest.yml` also carries a
+    // workflow-level `concurrency: ingest`, and matching that instead would
+    // make this assertion pass for the wrong reason.
+    const callers = [pushWorkflow, ingestWorkflow.slice(ingestWorkflow.indexOf('\n  publish:'))];
+
+    for (const caller of callers) {
+      const group = /concurrency:\n\s+group: (\S+)/.exec(caller)?.[1];
+      expect(group).toBe('publish');
+    }
+  });
+
+  it('records why the sweep must keep pushing with GITHUB_TOKEN', () => {
+    // Load-bearing and invisible: commits pushed with GITHUB_TOKEN create no
+    // workflow runs, which is the only reason the sweep's own report commits do
+    // not each trigger a publish. Swapping in a PAT to satisfy a ruleset would
+    // silently start firing one per sweep.
+    const pushStep = ingestWorkflow.slice(ingestWorkflow.indexOf('Commit run report'));
+
+    expect(pushStep.slice(0, 0) + ingestWorkflow).toMatch(/do not create workflow runs/);
+    expect(ingestWorkflow).toMatch(/bypass actor/);
   });
 });

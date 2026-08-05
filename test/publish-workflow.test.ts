@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { allWorkflows, readWorkflow } from './workflow-helpers.js';
 
 /**
  * Invariants of the publish workflow.
@@ -10,9 +10,9 @@ import { readFileSync, readdirSync } from 'node:fs';
  * alternative is finding out after a deploy.
  */
 
-const publishWorkflow = readFileSync('.github/workflows/publish.yml', 'utf8');
-const pushWorkflow = readFileSync('.github/workflows/publish-on-push.yml', 'utf8');
-const ingestWorkflow = readFileSync('.github/workflows/ingest.yml', 'utf8');
+const publishWorkflow = readWorkflow('publish.yml');
+const pushWorkflow = readWorkflow('publish-on-push.yml');
+const ingestWorkflow = readWorkflow('ingest.yml');
 
 describe('the corpus is chosen by what exists, not by how its run ended', () => {
   const resolveStep = publishWorkflow.slice(
@@ -235,9 +235,7 @@ describe('a compromised action tag cannot reach the deploy credential', () => {
   // moved every tag from v1 through v45 onto one malicious commit. This branch
   // makes a job holding the deploy credential reachable by merging a pull
   // request rather than only by cron, which raises what that would reach.
-  const workflows = readdirSync('.github/workflows')
-    .filter((f) => f.endsWith('.yml'))
-    .map((f) => [f, readFileSync(`.github/workflows/${f}`, 'utf8')] as const);
+  const workflows = allWorkflows();
 
   /** Exact paths, not a prefix — a loose carve-out is how a real action gets in. */
   const LOCAL = ['./.github/workflows/publish.yml'];

@@ -186,7 +186,11 @@ jobs:
 
       # This run's report, so the publish outcome cannot be recorded against a
       # previous run's.
+      #
+      # Only the sweep records. The report describes one sweep, and a code push
+      # is not one — there is no run report for it to belong to.
       - name: Fetch this run's report
+        if: inputs.record_outcome
         uses: actions/download-artifact@v4
         with:
           name: run-report
@@ -343,8 +347,11 @@ jobs:
       # `always()` is the whole point. Without it GitHub skips this step once
       # the deploy fails — which is precisely the case R8 exists to surface, and
       # the report would go on claiming the publish was never attempted.
+      # `always()` stays *inside* the recording gate rather than being replaced
+      # by it. It is there because a failed publish is exactly when the outcome
+      # must still be written — narrowing it now would reopen a closed bug.
       - name: Record the publish outcome
-        if: always()
+        if: always() && inputs.record_outcome
         env:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
@@ -370,8 +377,16 @@ jobs:
       # The sweep already committed this file as the heartbeat (KTD6); this adds
       # what only the publish job knows. A failed publish therefore lands in the
       # same artifact a failed run does, without a second mechanism.
+      #
+      # When recording is off, this workflow's own conclusion is the whole
+      # record. That costs something worth naming: the committed report now
+      # covers one of two publish paths, so `publish: published` describes *this
+      # sweep's* deploy attempt and is not a claim about what is currently live.
+      # For a code push the live answer is the deployed Worker version in
+      # Cloudflare, and `/version.json` on the site — not anything in this
+      # repository.
       - name: Commit the publish outcome
-        if: always()
+        if: always() && inputs.record_outcome
         # Explicit, because the redaction pipe below would otherwise report
         # sed's exit status instead of git's — every push would look successful.
         # GitHub runs `shell: bash` as `bash --noprofile --norc -eo pipefail`.

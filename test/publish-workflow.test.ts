@@ -113,6 +113,38 @@ describe('a corpus this tree should not publish stops the publish', () => {
   });
 });
 
+describe('only the sweep stamps the run report', () => {
+  it('declares the recording input as a boolean', () => {
+    // A string input makes 'false' truthy in a step `if:`, so the push path
+    // would run all three recording steps and then fail the commit under
+    // `contents: read` — a confusing way to learn the input was mistyped.
+    const inputs = publishWorkflow.slice(
+      publishWorkflow.indexOf('record_outcome:'),
+      publishWorkflow.indexOf('jobs:'),
+    );
+
+    expect(inputs).toMatch(/type: boolean/);
+    expect(inputs).toMatch(/default: false/);
+  });
+
+  it('gates all three recording steps on it', () => {
+    for (const step of ["Fetch this run's report", 'Record the publish outcome', 'Commit the publish outcome']) {
+      const at = publishWorkflow.indexOf(step);
+      expect(at, `no step named ${step}`).toBeGreaterThan(-1);
+      expect(publishWorkflow.slice(at, at + 200)).toMatch(/inputs\.record_outcome/);
+    }
+  });
+
+  it('keeps always() inside the gate rather than replacing it', () => {
+    // always() is there because a failed publish is exactly when the outcome
+    // must still be written. Narrowing it would reopen a closed bug.
+    for (const step of ['Record the publish outcome', 'Commit the publish outcome']) {
+      const at = publishWorkflow.indexOf(step);
+      expect(publishWorkflow.slice(at, at + 200)).toMatch(/always\(\) && inputs\.record_outcome/);
+    }
+  });
+});
+
 describe('the publish outcome is replayed onto the tip, never rebased onto it', () => {
   const commitStep = publishWorkflow.slice(publishWorkflow.indexOf('Commit the publish outcome'));
 

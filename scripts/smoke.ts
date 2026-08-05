@@ -228,12 +228,61 @@ export async function checkAdhoc(origin: string, deps: SmokeDeps = {}): Promise<
 }
 
 /**
+ * The one check that discriminates on every publish path.
+ *
+ * The corpus timestamp and the bundle name each prove a deploy took effect only
+ * when that thing changed. On the code-triggered path the corpus is redeployed
+ * unchanged, so its assertion can never fail; and a push that changes only the
+ * Worker, the manifest, the headers, or a workflow leaves Vite's content hash
+ * identical, so the bundle assertion cannot fail either. Both would be green
+ * against the deployment that was already live, which is precisely the silent
+ * pass they were added to refuse.
+ *
+ * `version.json` is written from the commit actually checked out, after the
+ * build, so it differs on every publish regardless of what the payload did.
+ */
+export async function checkVersion(
+  origin: string,
+  expectedCommit: string,
+  deps: SmokeDeps = {},
+): Promise<void> {
+  const get = getter(deps);
+  // Cache-busted for the same reason the corpus fetch is: an edge copy of the
+  // previous version would fail a deploy that did take effect.
+  const url = new URL('/version.json', origin);
+  url.searchParams.set('smoke', String(Date.now()));
+
+  const response = await get(url);
+  const body = await response.text();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    const hint = body.trimStart().startsWith('<')
+      ? 'the SPA shell was served instead — version.json is not in the deployed asset set'
+      : 'the body is not JSON';
+    throw new Error(`GET /version.json did not return a version stamp: ${hint}`);
+  }
+
+  const served = (parsed as { commit?: unknown }).commit;
+  if (typeof served !== 'string' || served.length === 0) {
+    throw new Error('GET /version.json returned JSON with no commit field');
+  }
+  if (served !== expectedCommit) {
+    throw new Error(
+      `GET /version.json is serving commit ${served}, not the ${expectedCommit} this run deployed — the deployment did not take effect`,
+    );
+  }
+}
+
+/**
  * Runs every check and returns the failures rather than exiting, so the caller
  * owns the process and the suite can assert on the result.
  */
 export async function runSmoke(
   origin: string,
-  expected: { generatedAt: string; bundle: string },
+  expected: { generatedAt: string; bundle: string; commit: string },
   deps: SmokeDeps = {},
   retry = withRetry,
 ): Promise<string[]> {
@@ -241,6 +290,7 @@ export async function runSmoke(
     ['shell', () => checkShell(origin, deps)],
     ['bundle', () => checkBundle(origin, expected.bundle, deps)],
     ['corpus', () => checkCorpus(origin, expected.generatedAt, deps)],
+    ['version', () => checkVersion(origin, expected.commit, deps)],
     ['adhoc', () => checkAdhoc(origin, deps)],
   ];
 
@@ -267,13 +317,15 @@ export async function runSmoke(
 }
 
 async function main(argv: string[]): Promise<void> {
-  const [origin, generatedAt, bundle] = argv;
-  if (!origin || !generatedAt || !bundle) {
-    console.error('usage: smoke <origin> <expected-corpus-generated-at> <expected-bundle-path>');
+  const [origin, generatedAt, bundle, commit] = argv;
+  if (!origin || !generatedAt || !bundle || !commit) {
+    console.error(
+      'usage: smoke <origin> <expected-corpus-generated-at> <expected-bundle-path> <expected-commit>',
+    );
     process.exit(2);
   }
 
-  const failures = await runSmoke(origin, { generatedAt, bundle });
+  const failures = await runSmoke(origin, { generatedAt, bundle, commit });
 
   if (failures.length > 0) {
     console.error(`::error::Smoke check failed against ${origin}`);

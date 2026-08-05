@@ -242,6 +242,26 @@ jobs:
         id: build
         run: npm run build
 
+      # Written after the build, into the deploy payload, so every publish
+      # serves something only that publish could have produced. Without it the
+      # push path has no discriminating identity check at all: the corpus is
+      # redeployed unchanged, and a push that touches only the Worker or the
+      # manifest leaves Vite's content hash identical too.
+      #
+      # `git rev-parse HEAD`, not `GITHUB_SHA`. The checkout above resolves the
+      # branch tip rather than the commit the run was queued on, so those two
+      # differ exactly when this job matters most — and stamping the queued
+      # commit would put the wrong identity on the right bytes.
+      - name: Stamp the build with the commit it was built from
+        id: stamp
+        shell: bash
+        run: |
+          commit="$(git rev-parse HEAD)"
+          printf '{"commit":"%s","runId":"%s","builtAt":"%s"}\n' \
+            "$commit" "$GITHUB_RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/version.json
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          echo "Stamped dist/version.json with ${commit}."
+
       # Gated on the build, not the sweep. The build step above has no explicit
       # condition, so a failure there skips this — but naming the dependency
       # keeps it true if anyone adds one later. A partial dist/ deployed over a
@@ -288,18 +308,20 @@ jobs:
       # from outside. Reported through its exit status so the recording step
       # below still runs.
       #
-      # The corpus timestamp and the bundle path are passed in because every
-      # check below would also pass against the deployment that was already
-      # live. Both are read from what this job just deployed — the corpus from
-      # the artifact, the bundle name from the shell it built — so a green
-      # result names those bytes and not a deploy that silently never took
-      # effect. Together they cover both halves: the data and the code.
+      # Three identities are passed in because every check below would also pass
+      # against the deployment that was already live. The corpus timestamp and
+      # the bundle name cover the data and the code — but each only
+      # discriminates when that thing changed, and on the code-triggered path
+      # the corpus is redeployed unchanged while a Worker-only or headers-only
+      # push leaves the bundle hash identical. The commit stamp is the one that
+      # differs on every publish, so no path is left with nothing that can fail.
       - name: Smoke-check the deployment
         id: smoke
         if: steps.deploy.outcome == 'success'
         shell: bash
         env:
           DEPLOY_ORIGIN: ${{ vars.DEPLOY_ORIGIN }}
+          EXPECTED_COMMIT: ${{ steps.stamp.outputs.commit }}
         run: |
           if [ -z "$DEPLOY_ORIGIN" ]; then
             echo "::error::The DEPLOY_ORIGIN variable is not set, so there is nothing to check."
@@ -316,7 +338,7 @@ jobs:
             echo "::error::No module script found in the built dist/index.html."
             exit 1
           fi
-          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at" "$bundle"
+          npx tsx scripts/smoke.ts "$DEPLOY_ORIGIN" "$generated_at" "$bundle" "$EXPECTED_COMMIT"
 
       # `always()` is the whole point. Without it GitHub skips this step once
       # the deploy fails — which is precisely the case R8 exists to surface, and

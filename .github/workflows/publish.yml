@@ -256,19 +256,38 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/run-report.json
-          if git diff --cached --quiet; then
-            echo "Publish outcome unchanged; nothing to commit."
-            exit 0
-          fi
-          git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+
+          commit_outcome() {
+            git add data/run-report.json
+            if git diff --cached --quiet; then
+              echo "Publish outcome unchanged; nothing to commit."
+              return 1
+            fi
+            git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)"
+          }
+
+          commit_outcome || exit 0
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Replaying rather than rebasing, for the same reason the sweep's own
+          # report push does: this file is a whole-file snapshot of one run, so
+          # two writers conflict on every line and no merge of them means
+          # anything. A rebase here can only fail, and failing mid-rebase leaves
+          # conflict markers that the next guard reads as a leaked corpus.
           for attempt in 1 2 3; do
             if git push "$remote" "HEAD:${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g"; then
               exit 0
             fi
-            echo "Push rejected (attempt $attempt); rebasing onto the current branch tip."
-            git pull --rebase --autostash "$remote" "${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g" || exit 1
+            echo "Push rejected (attempt $attempt); replaying this outcome onto the current tip."
+
+            # Keep this run's report, take everything else from the remote. The
+            # corpus is untracked, so a hard reset does not disturb it (KTD11).
+            cp data/run-report.json "${RUNNER_TEMP}/run-report.json"
+            git fetch "$remote" "${GITHUB_REF_NAME}" 2>&1 | sed "s/${GH_TOKEN}/***/g" || exit 1
+            git reset --hard FETCH_HEAD || exit 1
+            cp "${RUNNER_TEMP}/run-report.json" data/run-report.json
+
+            commit_outcome || exit 0
           done
           echo "::error::Could not push the publish outcome after 3 attempts."
           exit 1

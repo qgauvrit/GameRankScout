@@ -41,7 +41,12 @@ describe('both jobs check out the branch tip, not the commit the run was queued 
   ] as const) {
     it(`${name} pins ref to the branch name`, () => {
       const steps = job(name, source);
-      const checkout = steps.slice(steps.indexOf('actions/checkout@v4'));
+      // Located by action rather than by `@v4`: the ref is SHA-pinned now, and
+      // an assertion keyed to the tag would silently slice from -1 and read the
+      // whole job instead of the checkout step.
+      const at = steps.search(/uses: actions\/checkout@/);
+      expect(at, `no checkout step in the ${name} job`).toBeGreaterThan(-1);
+      const checkout = steps.slice(at);
 
       expect(checkout).toMatch(/ref:\s*\$\{\{\s*github\.ref_name\s*\}\}/);
     });

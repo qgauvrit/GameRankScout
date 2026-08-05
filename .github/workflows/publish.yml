@@ -88,14 +88,14 @@ jobs:
       # commit the schedule fired on, which is the same stale commit the sweep
       # job started from, and the whole point of this job would be lost.
       # Checking out by branch name resolves the tip as it stands now.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.ref_name }}
           # Otherwise the contents:write token sits in .git/config for every
           # later step, including npm ci's install scripts and the deploy.
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -153,7 +153,7 @@ jobs:
       # into `public/` would put whatever it contains into the asset set
       # `wrangler deploy` publishes.
       - name: Fetch the corpus to deploy
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: corpus
           path: ${{ runner.temp }}/corpus-artifact
@@ -191,7 +191,7 @@ jobs:
       # is not one — there is no run report for it to belong to.
       - name: Fetch this run's report
         if: inputs.record_outcome
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: run-report
           path: data
@@ -275,7 +275,7 @@ jobs:
       # recovery artifact at the exact moment it is wanted.
       - name: Upload the built site
         if: always() && steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: site
           path: dist

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 /**
  * Invariants of the publish workflow.
@@ -227,5 +227,59 @@ describe('the push path publishes without waiting for a sweep', () => {
 
     expect(pushStep.slice(0, 0) + ingestWorkflow).toMatch(/do not create workflow runs/);
     expect(ingestWorkflow).toMatch(/bypass actor/);
+  });
+});
+
+describe('a compromised action tag cannot reach the deploy credential', () => {
+  // Tag pinning is not a control: the 2025 tj-actions/changed-files compromise
+  // moved every tag from v1 through v45 onto one malicious commit. This branch
+  // makes a job holding the deploy credential reachable by merging a pull
+  // request rather than only by cron, which raises what that would reach.
+  const workflows = readdirSync('.github/workflows')
+    .filter((f) => f.endsWith('.yml'))
+    .map((f) => [f, readFileSync(`.github/workflows/${f}`, 'utf8')] as const);
+
+  /** Exact paths, not a prefix — a loose carve-out is how a real action gets in. */
+  const LOCAL = ['./.github/workflows/publish.yml'];
+
+  it('pins every third-party action to a full commit SHA', () => {
+    for (const [name, source] of workflows) {
+      for (const match of source.matchAll(/uses: (\S+)/g)) {
+        const ref = match[1]!;
+        const pinned = /^[^@]+@[0-9a-f]{40}$/.test(ref);
+        expect(pinned || LOCAL.includes(ref), `${name}: unpinned \`uses: ${ref}\``).toBe(true);
+      }
+    }
+  });
+
+  it('actually covers some third-party action', () => {
+    // Without this, a future loosening could reduce the rule above to covering
+    // nothing while staying green — the shape of the one-file fixture check
+    // recorded in docs/solutions/security-issues/.
+    const shaPinned = workflows.flatMap(([, source]) =>
+      [...source.matchAll(/uses: (\S+@[0-9a-f]{40})/g)].map((m) => m[1]!),
+    );
+
+    expect(shaPinned.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the readable version beside each pin', () => {
+    // A bare SHA is unreviewable and never gets updated. The trailing comment
+    // is what makes the pin legible enough to maintain.
+    for (const [name, source] of workflows) {
+      for (const match of source.matchAll(/uses: \S+@[0-9a-f]{40}[^\n]*/g)) {
+        expect(match[0], `${name}: pin without a version comment`).toMatch(/# v\d+\.\d+\.\d+/);
+      }
+    }
+  });
+
+  it('pins download-artifact to a release that carries run-id', () => {
+    // The cross-run corpus lookup depends on that input, which arrived partway
+    // through v4. An earlier SHA would silently remove the mechanism.
+    const pin = /actions\/download-artifact@[0-9a-f]{40} # v(\d+)\.(\d+)\.(\d+)/.exec(publishWorkflow);
+
+    expect(pin).not.toBeNull();
+    const [major, minor] = [Number(pin![1]), Number(pin![2])];
+    expect(major > 4 || (major === 4 && minor >= 1)).toBe(true);
   });
 });

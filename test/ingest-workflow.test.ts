@@ -15,12 +15,13 @@ import { readFileSync } from 'node:fs';
  */
 
 const workflow = readFileSync('.github/workflows/ingest.yml', 'utf8');
+const publishWorkflow = readFileSync('.github/workflows/publish.yml', 'utf8');
 
 /** The steps of one named job, up to the start of the next job. */
-function job(name: string): string {
-  const start = workflow.indexOf(`\n  ${name}:\n`);
+function job(name: string, source = workflow): string {
+  const start = source.indexOf(`\n  ${name}:\n`);
   expect(start, `no ${name} job in the workflow`).toBeGreaterThan(-1);
-  const rest = workflow.slice(start + 1);
+  const rest = source.slice(start + 1);
   const next = rest.search(/\n {2}[a-z][a-z-]*:\n/);
   return next === -1 ? rest : rest.slice(0, next);
 }
@@ -31,9 +32,15 @@ describe('both jobs check out the branch tip, not the commit the run was queued 
   // hours, so by the time either job acts, that commit can be long superseded.
   // For the publish job that would deploy stale code; for the sweep it made the
   // report push fail against a base that was already behind at checkout.
-  for (const name of ['ingest', 'publish']) {
+  //
+  // The publish job moved to its own workflow so both deploy paths share one
+  // definition; the invariant followed it there rather than lapsing.
+  for (const [name, source] of [
+    ['ingest', workflow],
+    ['publish', publishWorkflow],
+  ] as const) {
     it(`${name} pins ref to the branch name`, () => {
-      const steps = job(name);
+      const steps = job(name, source);
       const checkout = steps.slice(steps.indexOf('actions/checkout@v4'));
 
       expect(checkout).toMatch(/ref:\s*\$\{\{\s*github\.ref_name\s*\}\}/);

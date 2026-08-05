@@ -107,7 +107,12 @@ describe('pairing a corpus with code that can read it', () => {
 
 describe('the workflow and the enum agree on the outcome names', () => {
   it('records only outcomes the report schema accepts', () => {
-    const workflow = readFileSync('.github/workflows/ingest.yml', 'utf8');
+    // The recording step moved to `publish.yml` when the publish job became a
+    // reusable workflow. The cross-check follows it: `indexOf`/`slice` returns
+    // the whole file rather than throwing when the marker is absent, so the
+    // length guard below is the only thing standing between a moved step and a
+    // test that silently checks nothing.
+    const workflow = readFileSync('.github/workflows/publish.yml', 'utf8');
     const block = workflow.slice(workflow.indexOf('Record the publish outcome'));
     const assigned = [...block.matchAll(/outcome=([a-z_]+)/g)].map((match) => match[1]!);
 

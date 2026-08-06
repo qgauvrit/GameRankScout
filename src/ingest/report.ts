@@ -69,6 +69,13 @@ export interface RunReport {
    * Written by the ingest as `not_attempted` and overwritten by the publish job
    * once it knows. The ingest cannot know: publishing happens in a later job,
    * after this file has already been written and committed.
+   *
+   * It describes *this sweep's* deploy attempt, and nothing more. Since a code
+   * change can now publish without waiting for a sweep, `published` here is not
+   * a claim about what is currently live — a later code-triggered publish
+   * leaves this field untouched, by design, because the report describes one
+   * sweep and a code push is not one. For what is actually deployed, read
+   * `/version.json` on the site or the Worker's version in Cloudflare.
    */
   publish: PublishOutcome;
 }

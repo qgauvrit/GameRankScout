@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { job, readWorkflow } from './workflow-helpers.js';
 
 /**
  * Invariants of the ingest workflow that nothing else can catch.
@@ -14,36 +14,23 @@ import { readFileSync } from 'node:fs';
  * are here because the alternative is finding out tomorrow morning.
  */
 
-const workflow = readFileSync('.github/workflows/ingest.yml', 'utf8');
+const workflow = readWorkflow('ingest.yml');
 
-/** The steps of one named job, up to the start of the next job. */
-function job(name: string): string {
-  const start = workflow.indexOf(`\n  ${name}:\n`);
-  expect(start, `no ${name} job in the workflow`).toBeGreaterThan(-1);
-  const rest = workflow.slice(start + 1);
-  const next = rest.search(/\n {2}[a-z][a-z-]*:\n/);
-  return next === -1 ? rest : rest.slice(0, next);
+/** This file's own job, asserted present rather than silently absent. */
+function ingestJob(): string {
+  const body = job(workflow, 'ingest');
+  expect(body, 'no ingest job in the workflow').not.toBeNull();
+  return body!;
 }
 
-describe('both jobs check out the branch tip, not the commit the run was queued on', () => {
-  // `github.sha` is the tip as it was when the run was *queued*. The sweep can
-  // sit behind another run in the concurrency group and then run for five
-  // hours, so by the time either job acts, that commit can be long superseded.
-  // For the publish job that would deploy stale code; for the sweep it made the
-  // report push fail against a base that was already behind at checkout.
-  for (const name of ['ingest', 'publish']) {
-    it(`${name} pins ref to the branch name`, () => {
-      const steps = job(name);
-      const checkout = steps.slice(steps.indexOf('actions/checkout@v4'));
-
-      expect(checkout).toMatch(/ref:\s*\$\{\{\s*github\.ref_name\s*\}\}/);
-    });
-  }
-});
+// The checkout-ref invariant moved to `publish-paths.test.ts`. It was two
+// named jobs here; there are three workflows now, and the version there covers
+// every one of them rather than the two that happened to exist when it was
+// written.
 
 describe('the run report is replayed onto the tip, never rebased onto it', () => {
   const commitStep = (() => {
-    const steps = job('ingest');
+    const steps = ingestJob();
     return steps.slice(steps.indexOf('Commit run report'), steps.indexOf('Assert no corpus'));
   })();
 
@@ -76,7 +63,7 @@ describe('the run report is replayed onto the tip, never rebased onto it', () =>
 
 describe('the corpus alarm says what it means', () => {
   const assertStep = (() => {
-    const steps = job('ingest');
+    const steps = ingestJob();
     return steps.slice(steps.indexOf('Assert no corpus was committed'));
   })();
 

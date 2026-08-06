@@ -5,6 +5,7 @@ import {
   checkBundle,
   checkCorpus,
   checkShell,
+  checkVersion,
   runSmoke,
   withRetry,
 } from './smoke.js';
@@ -23,8 +24,13 @@ import {
 
 const GENERATED_AT = '2026-08-01T07:44:00.000Z';
 const BUNDLE = '/assets/index-B3KZF911.js';
-/** Both halves of what this run published: its data and its code. */
-const EXPECTED = { generatedAt: GENERATED_AT, bundle: BUNDLE };
+const COMMIT = '1f3c9a27b4e6d5081c2a7f93be04d615a8c7e2b9';
+/**
+ * What this run published: its data, its code, and the commit both came from.
+ * The third exists because the first two only discriminate when that thing
+ * changed, and a code-triggered publish can change neither.
+ */
+const EXPECTED = { generatedAt: GENERATED_AT, bundle: BUNDLE, commit: COMMIT };
 
 const SECURITY_HEADERS = {
   'content-security-policy': "default-src 'self'",
@@ -51,6 +57,10 @@ function deployment(routes: Record<string, Route>): typeof fetch {
     '/': { body: SHELL, headers: SECURITY_HEADERS },
     [BUNDLE]: { body: 'import{a}from"./chunk.js";', headers: { 'content-type': 'text/javascript' } },
     '/corpus.json': { body: corpus(), headers: { 'content-type': 'application/json' } },
+    '/version.json': {
+      body: JSON.stringify({ commit: COMMIT, runId: '42', builtAt: GENERATED_AT }),
+      headers: { 'content-type': 'application/json' },
+    },
     '/adhoc': {
       body: JSON.stringify({ error: 'invalid_community', detail: 'nope' }),
       status: 400,
@@ -95,6 +105,60 @@ describe('checking that the deploy under test is the one that answered', () => {
     await expect(checkCorpus(ORIGIN, GENERATED_AT, { fetchImpl: untimestamped })).rejects.toThrow(
       /did not take effect/,
     );
+  });
+});
+
+describe('the identity check that works when nothing about the payload changed', () => {
+  it('accepts the commit this run deployed', async () => {
+    await expect(
+      checkVersion(ORIGIN, COMMIT, { fetchImpl: deployment({}) }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('catches a deploy that never took effect, where every other check is green', async () => {
+    // The case the whole unit exists for. This is a code-triggered publish: the
+    // corpus is redeployed unchanged and the push touched only the Worker, so
+    // Vite emitted the same bundle name. Corpus and bundle both pass. Only the
+    // commit stamp says the deploy did not land.
+    const previous = deployment({
+      '/version.json': { body: JSON.stringify({ commit: 'aaaaaaaabbbbbbbbccccccccdddddddd00000000' }) },
+    });
+
+    await expect(checkCorpus(ORIGIN, GENERATED_AT, { fetchImpl: previous })).resolves.toBeUndefined();
+    await expect(checkBundle(ORIGIN, BUNDLE, { fetchImpl: previous })).resolves.toBeUndefined();
+
+    await expect(checkVersion(ORIGIN, COMMIT, { fetchImpl: previous })).rejects.toThrow(
+      /serving commit aaaaaaaa.*not the 1f3c9a27.*did not take effect/s,
+    );
+  });
+
+  it('refuses a missing version stamp rather than treating it as a match', async () => {
+    // Under the SPA fallback an absent version.json is a 200 with the shell.
+    const missing = deployment({ '/version.json': { body: SHELL } });
+
+    await expect(checkVersion(ORIGIN, COMMIT, { fetchImpl: missing })).rejects.toThrow(
+      /not in the deployed asset set/,
+    );
+  });
+
+  it('refuses a stamp with no commit field', async () => {
+    const empty = deployment({ '/version.json': { body: JSON.stringify({ runId: '42' }) } });
+
+    await expect(checkVersion(ORIGIN, COMMIT, { fetchImpl: empty })).rejects.toThrow(
+      /no commit field/,
+    );
+  });
+
+  it('asks in a form no edge cache can answer from', async () => {
+    const asked: string[] = [];
+    const recording = (async (input: URL | string) => {
+      asked.push(String(input));
+      return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
+    }) as typeof fetch;
+
+    await checkVersion(ORIGIN, COMMIT, { fetchImpl: recording });
+
+    expect(asked[0]).toMatch(/\/version\.json\?smoke=\d+/);
   });
 });
 
@@ -283,6 +347,19 @@ describe('the run as a whole', () => {
 
   it('passes against a deployment serving exactly what this run built', async () => {
     expect(await runSmoke(ORIGIN, EXPECTED, { fetchImpl: deployment({}) }, once)).toEqual([]);
+  });
+
+  it('runs the version check, not merely define it', async () => {
+    // Dropping `version` from the check list left every other test green: the
+    // unit tests call checkVersion directly, so none of them notices that
+    // runSmoke stopped calling it. A guard that covers nothing passes.
+    const stale = deployment({
+      '/version.json': { body: JSON.stringify({ commit: 'aaaaaaaabbbbbbbbccccccccdddddddd00000000' }) },
+    });
+
+    expect(await runSmoke(ORIGIN, EXPECTED, { fetchImpl: stale }, once)).toEqual([
+      expect.stringMatching(/did not take effect/),
+    ]);
   });
 
   it('reports every broken surface, not only the first', async () => {

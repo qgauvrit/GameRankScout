@@ -1,0 +1,61 @@
+name: Publish on push
+
+# A code change reaching the live site without waiting for the next sweep.
+#
+# Before this, the only publish path was the daily ingest: a one-line copy fix
+# merged at 09:00 went live at 05:17 the next morning, behind two and a quarter
+# hours of sweeping it had nothing to do with. This is the same publish job the
+# sweep calls — same lint and test, same corpus/schema pairing, same smoke check
+# — differing only in where the corpus comes from and that it writes no report.
+
+on:
+  push:
+    branches: [main]
+    # A cost measure, and only that. Path filters are documented to fail *open*
+    # on a push carrying more than 1,000 files or more than 300 commits, so this
+    # cannot be relied on to stop a publish — it just avoids spending a deploy
+    # on a commit that provably changes nothing the site serves. Anything that
+    # must not publish belongs behind the event allowlist in `publish.yml` or
+    # behind the branch itself, not here.
+    paths-ignore:
+      - 'docs/**'
+      - 'data/**'
+      - '**/*.md'
+
+jobs:
+  publish:
+    # Both deploy paths share one group so they can never interleave. Written as
+    # a literal, identical to the sweep's caller: inside a reusable workflow
+    # `github.workflow` resolves to the *caller's* name, so an interpolated group
+    # would produce two different groups — and two publishes racing is the one
+    # thing this group exists to prevent.
+    #
+    # `cancel-in-progress: false` protects the running publish, not the waiting
+    # one: a third queued run cancels the pending second. That is the accepted
+    # trade — a cancelled push publish is republished by the next push or the
+    # next sweep, whereas a cancelled *running* deploy could leave a half-updated
+    # asset set.
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+
+    # This path commits nothing, so it grants no write. The caller's grant is the
+    # ceiling for the job it calls, which is what makes this line the actual
+    # control rather than a description of one: the publish job cannot exceed it,
+    # and its recording steps are gated off for exactly that reason.
+    #
+    # `actions: read` is what lets it look up the newest swept corpus, since it
+    # has none of its own.
+    permissions:
+      contents: read
+      actions: read
+
+    # Local, so it resolves from this workflow's own commit and takes no ref to
+    # pin.
+    uses: ./.github/workflows/publish.yml
+    with:
+      # Empty: no corpus of this run's own, so the publish job resolves the
+      # newest swept one.
+      corpus_run_id: ''
+      # The report describes one sweep, and this is not one.
+      record_outcome: false

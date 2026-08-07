@@ -432,10 +432,16 @@ jobs:
             git commit -m "chore(ingest): publish outcome $(date -u +%Y-%m-%dT%H:%MZ)" || return 1
           }
 
-          # `if` rather than a bare call: under `set -e` a function returning
-          # non-zero as a simple command aborts the step before it can be read.
-          if ! commit_outcome; then
-            rc=$?
+          # `|| rc=$?` rather than `if ! commit_outcome`: under `set -e` a bare
+          # call that returns non-zero aborts the step, but `if ! commit_outcome`
+          # negates the status before `$?` can be read — so the `9` sentinel
+          # ("nothing to commit") always arrived as `0`, and every unchanged
+          # outcome, which is every re-run of an already-recorded run, exited 1
+          # as though the push had failed. `|| rc=$?` suppresses the abort and
+          # captures the real status, 9 or 1.
+          rc=0
+          commit_outcome || rc=$?
+          if [ "$rc" -ne 0 ]; then
             [ "$rc" -eq 9 ] && exit 0
             exit 1
           fi
@@ -459,8 +465,9 @@ jobs:
             git reset --hard FETCH_HEAD || exit 1
             cp "${RUNNER_TEMP}/run-report.json" data/run-report.json
 
-            if ! commit_outcome; then
-              rc=$?
+            rc=0
+            commit_outcome || rc=$?
+            if [ "$rc" -ne 0 ]; then
               [ "$rc" -eq 9 ] && exit 0
               exit 1
             fi

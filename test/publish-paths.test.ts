@@ -30,6 +30,21 @@ describe('the two publish paths cannot collide', () => {
     expect(names).toContain('ingest.yml');
   });
 
+  it('makes every caller pass secrets to the reusable workflow', () => {
+    // The deploy credential lives on the `production` environment and is read
+    // inside `publish.yml`. A called workflow's `secrets` context is sealed:
+    // an environment secret referenced there resolves to the empty string
+    // unless the caller passes `secrets: inherit`, even though the deploy job
+    // names the environment itself. Omit this line and every step upstream of
+    // the deploy still passes — the credential simply arrives blank and the
+    // deploy fails closed, which is the failure this guard exists to pre-empt.
+    for (const [name, body] of publishCallers()) {
+      expect(body, `${name} does not pass \`secrets: inherit\` to publish.yml`).toMatch(
+        /secrets: inherit/,
+      );
+    }
+  });
+
   it('puts every caller in the same literal concurrency group', () => {
     const groups = publishCallers().map(([name, body]) => {
       const group = /concurrency:\n\s+group: (\S+)/.exec(body)?.[1];

@@ -1,10 +1,15 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { astryxStylex } from '@astryxdesign/build/vite';
 
 export default defineConfig({
   plugins: [
     react(),
+    // Astryx compiles through StyleX at build time. This plugin runs for both
+    // `vite build` and the vitest suite (they share this config), so component
+    // styles are transformed the same way in production and in tests (R4).
+    astryxStylex(),
     VitePWA({
       registerType: 'autoUpdate',
       // The manifest is authored by hand in public/ so it stays reviewable.

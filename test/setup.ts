@@ -50,4 +50,21 @@ if (typeof globalThis.sessionStorage !== 'undefined') {
         }) as unknown as MediaQueryList,
     });
   }
+
+  // jsdom does not implement the <dialog> modal methods, but the Astryx Dialog
+  // (the filter and evidence sheets) calls them. The conventional polyfill
+  // toggles the `open` attribute the methods reflect, so open/close is testable.
+  const dialogProto = globalThis.HTMLDialogElement?.prototype;
+  if (dialogProto && typeof dialogProto.showModal !== 'function') {
+    dialogProto.showModal = function showModal(this: HTMLDialogElement) {
+      this.open = true;
+    };
+    dialogProto.show = function show(this: HTMLDialogElement) {
+      this.open = true;
+    };
+    dialogProto.close = function close(this: HTMLDialogElement) {
+      this.open = false;
+      this.dispatchEvent(new Event('close'));
+    };
+  }
 }

@@ -40,6 +40,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // The astryxStylex plugin's StyleX transform (a public-beta dependency)
+    // leaves file handles open on the vite server, so after the suite passes
+    // vitest waits out its close timeout before force-exiting cleanly (exit 0).
+    // Capping the wait keeps that beta leak from adding ~10s to every run; it
+    // only bounds post-success server teardown, never a test's own execution.
+    teardownTimeout: 2000,
     include: [
       'src/**/*.test.ts',
       'src/**/*.test.tsx',

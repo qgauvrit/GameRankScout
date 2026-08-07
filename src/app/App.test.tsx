@@ -142,12 +142,12 @@ describe('app shell', () => {
 
     render(<App />);
 
-    // Target the notice by its copy rather than role="status": Astryx buttons
-    // render their own visually-hidden status announcers, so the role is no
-    // longer unique to this notice. (The notices become one status line in U4.)
-    const notice = (await screen.findByText(/not much matched in the past week/i)).closest('p');
-    expect(notice).toHaveTextContent(/widened the timeframe to the past month/i);
-    expect(notice).toHaveTextContent(/every other filter is untouched/i);
+    // The relaxed-timeframe status now lives in the collapsed status line as a
+    // single Text element; assert its copy directly. (jsdom does not apply the
+    // collapse CSS, so the mounted copy is findable without expanding.)
+    expect(await screen.findByText(/not much matched in the past week/i)).toBeInTheDocument();
+    expect(screen.getByText(/widened the timeframe to the past month/i)).toBeInTheDocument();
+    expect(screen.getByText(/every other filter is untouched/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Month Game 0/i })).toBeInTheDocument();
   });
 

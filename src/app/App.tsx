@@ -17,6 +17,7 @@ import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import { RANKING_WINDOWS } from '../corpus/schema.js';
 import { Button, EmptyState, Heading, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
+import { StatusLine, type StatusItem } from './views/StatusLine.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
@@ -249,6 +250,88 @@ export function App() {
     );
   }
 
+  // Every active status collapses into one expandable line (R6). The offline
+  // and failed-source states stand on their own; the intro, momentum and
+  // relaxed-timeframe states only apply once there is a ranking to explain.
+  const hasRanking = loadedCorpus.games.length > 0;
+  const statuses: StatusItem[] = [];
+
+  if (origin === 'cache' || !online) {
+    statuses.push({
+      key: 'offline',
+      content: (
+        <Text type="body">
+          <strong>Showing the last ranking you loaded.</strong> You are offline, so this may be
+          behind what communities are discussing now.
+        </Text>
+      ),
+    });
+  }
+
+  if (failedSources.length > 0) {
+    statuses.push({
+      key: 'failed',
+      content: (
+        <Text type="body">
+          <strong>
+            {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
+            during the last update.
+          </strong>{' '}
+          The ranking is built from the sources that did, so it is thinner than usual.
+        </Text>
+      ),
+    });
+  }
+
+  if (hasRanking && !reader.introSeen) {
+    statuses.push({
+      key: 'intro',
+      content: (
+        <Stack direction="vertical" gap={1} hAlign="start">
+          <Text type="body">
+            <strong>This is Hidden gems.</strong> Ranked by how much communities are discussing a
+            game, then pushed down for how many people already own it. Open an entry to see the
+            threads behind it.
+          </Text>
+          <Button
+            variant="ghost"
+            size="sm"
+            label="Got it"
+            onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
+          />
+        </Stack>
+      ),
+    });
+  }
+
+  if (hasRanking && !momentumAvailable(loadedCorpus.games, reader.filters.mode)) {
+    statuses.push({
+      key: 'momentum',
+      live: true,
+      content: (
+        <Text type="body">
+          <strong>{MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.</strong>{' '}
+          The last update did not cover the recent window this mode needs, so these are ranked
+          without any sense of momentum.
+        </Text>
+      ),
+    });
+  }
+
+  if (hasRanking && result.relaxedFrom) {
+    statuses.push({
+      key: 'relaxed',
+      live: true,
+      content: (
+        <Text type="body">
+          <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
+          Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every other
+          filter is untouched.
+        </Text>
+      ),
+    });
+  }
+
   return (
     <div className="app">
       <Stack as="header" direction="horizontal" hAlign="between" vAlign="center" gap={2}>
@@ -264,28 +347,7 @@ export function App() {
         </Stack>
       </Stack>
 
-      {(origin === 'cache' || !online) && (
-        <p className="notice">
-          <span aria-hidden="true">◍</span>
-          <span>
-            <strong>Showing the last ranking you loaded.</strong> You are offline, so this may be
-            behind what communities are discussing now.
-          </span>
-        </p>
-      )}
-
-      {failedSources.length > 0 && (
-        <p className="notice">
-          <span aria-hidden="true">◍</span>
-          <span>
-            <strong>
-              {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
-              during the last update.
-            </strong>{' '}
-            The ranking is built from the sources that did, so it is thinner than usual.
-          </span>
-        </p>
-      )}
+      <StatusLine statuses={statuses} />
 
       {loadedCorpus.games.length === 0 ? (
         <EmptyState
@@ -296,48 +358,6 @@ export function App() {
       ) : (
         <>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
-
-          {!reader.introSeen && (
-            <p className="notice notice-intro">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>This is Hidden gems.</strong> Ranked by how much communities are
-                discussing a game, then pushed down for how many people already own it. Open an
-                entry to see the threads behind it.
-              </span>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
-              >
-                Got it
-              </button>
-            </p>
-          )}
-
-          {!momentumAvailable(loadedCorpus.games, reader.filters.mode) && (
-            <p className="notice" role="status">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>
-                  {MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.
-                </strong>{' '}
-                The last update did not cover the recent window this mode needs, so these are
-                ranked without any sense of momentum.
-              </span>
-            </p>
-          )}
-
-          {result.relaxedFrom && (
-            <p className="notice" role="status">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
-                Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every
-                other filter is untouched.
-              </span>
-            </p>
-          )}
 
           {result.exhausted ? (
             <EmptyState

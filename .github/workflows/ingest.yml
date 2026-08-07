@@ -253,3 +253,12 @@ jobs:
       corpus_run_id: ${{ github.run_id }}
       # This is the sweep, and the report describes a sweep.
       record_outcome: true
+    # Without this the deploy credential arrives empty. `publish.yml` reads it as
+    # an environment-scoped secret, and a called workflow's `secrets` context is
+    # sealed unless the caller opens it: such a secret referenced in a reusable
+    # workflow resolves to the empty string until `secrets: inherit` is passed,
+    # even though the deploy job scopes itself to the `production` environment.
+    # That scoping still decides *which* secret is used — inherit opens the
+    # channel, it does not hand the caller's secrets to the deploy — so the token
+    # stays environment-scoped exactly as `publish.yml` intends.
+    secrets: inherit

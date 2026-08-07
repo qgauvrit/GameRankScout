@@ -59,3 +59,9 @@ jobs:
       corpus_run_id: ''
       # The report describes one sweep, and this is not one.
       record_outcome: false
+    # Required, or the deploy credential resolves empty — see the sweep caller in
+    # `ingest.yml` for why. An environment-scoped secret in a reusable workflow
+    # needs the caller to pass `secrets: inherit`; the deploy job's own scoping
+    # to the `production` environment still selects the secret and keeps it
+    # scoped.
+    secrets: inherit

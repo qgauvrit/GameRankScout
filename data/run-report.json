@@ -31,5 +31,5 @@
   "games": 1081,
   "evidence": 7235,
   "corpusBytes": 3583748,
-  "publish": "not_attempted"
+  "publish": "deploy_failed"
 }

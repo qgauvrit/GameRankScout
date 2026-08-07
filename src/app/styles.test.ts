@@ -78,8 +78,16 @@ describe('styling coverage', () => {
 
   it('finds the components it is meant to be checking', () => {
     // A regex that silently matched nothing would make the check above vacuous.
+    // Counted across all components rather than App.tsx alone: as the Astryx
+    // migration moves styling into the design system, any single file's bespoke
+    // class count shrinks toward zero, but the suite still uses plenty until
+    // U9 replaces this whole guard.
     const files = tsxFiles(APP_DIR);
     expect(files.length).toBeGreaterThan(4);
-    expect(classesUsed(readFileSync(join(APP_DIR, 'App.tsx'), 'utf8')).size).toBeGreaterThan(4);
+    const totalClassesUsed = files.reduce(
+      (total, file) => total + classesUsed(readFileSync(file, 'utf8')).size,
+      0,
+    );
+    expect(totalClassesUsed).toBeGreaterThan(4);
   });
 });

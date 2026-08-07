@@ -186,7 +186,10 @@ describe('every reachable state is a designed one', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/widened the timeframe/i);
+    // By text, not role="status": Astryx buttons add their own status
+    // announcers, so the role is no longer unique to this notice (U4 collapses
+    // the notices into one status line).
+    expect(await screen.findByText(/widened the timeframe/i)).toBeInTheDocument();
   });
 });
 

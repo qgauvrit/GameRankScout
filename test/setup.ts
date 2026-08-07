@@ -28,4 +28,26 @@ if (typeof globalThis.sessionStorage !== 'undefined') {
     configurable: true,
     writable: true,
   });
+
+  // jsdom does not implement matchMedia, but Astryx components query it (for
+  // reduced-motion and responsive behaviour), so every themed render would
+  // throw without this. The conventional no-match stub: nothing matches, and
+  // listener registration is a no-op.
+  if (typeof window.matchMedia !== 'function') {
+    Object.defineProperty(globalThis, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: (query: string): MediaQueryList =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }) as unknown as MediaQueryList,
+    });
+  }
 }

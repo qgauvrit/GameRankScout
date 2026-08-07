@@ -142,8 +142,10 @@ describe('app shell', () => {
 
     render(<App />);
 
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(/not much matched in the past week/i);
+    // Target the notice by its copy rather than role="status": Astryx buttons
+    // render their own visually-hidden status announcers, so the role is no
+    // longer unique to this notice. (The notices become one status line in U4.)
+    const notice = (await screen.findByText(/not much matched in the past week/i)).closest('p');
     expect(notice).toHaveTextContent(/widened the timeframe to the past month/i);
     expect(notice).toHaveTextContent(/every other filter is untouched/i);
     expect(screen.getByRole('button', { name: /Month Game 0/i })).toBeInTheDocument();
@@ -185,8 +187,11 @@ describe('app shell', () => {
     await user.selectOptions(screen.getByLabelText(/platform/i), 'ios');
 
     expect(screen.getByRole('heading', { name: /nothing matches those filters/i })).toBeInTheDocument();
-    // Nothing was widened, because widening could not have helped.
-    expect(screen.queryByRole('status')).toBeNull();
+    // Nothing was widened, because widening could not have helped. Assert the
+    // relaxed-timeframe copy is absent directly: role="status" is no longer a
+    // proxy for "a notice showed" now that the exhausted state and Astryx
+    // buttons carry their own status roles.
+    expect(screen.queryByText(/widened the timeframe/i)).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /reset filters/i }));
     expect(screen.getByRole('button', { name: /Desktop Pick/i })).toBeInTheDocument();

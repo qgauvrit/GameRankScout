@@ -16,6 +16,7 @@ import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
 import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import { RANKING_WINDOWS } from '../corpus/schema.js';
+import { Button, EmptyState, Heading, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
@@ -202,11 +203,12 @@ export function App() {
   if (state.status === 'loading') {
     return (
       <div className="app">
-        <div className="state">
-          <div className="glyph spinning" />
-          <h2>Reading the room</h2>
-          <p>Pulling in what communities have been discussing.</p>
-        </div>
+        <EmptyState
+          headingLevel={2}
+          icon={<Spinner />}
+          title="Reading the room"
+          description="Pulling in what communities have been discussing."
+        />
       </div>
     );
   }
@@ -215,18 +217,16 @@ export function App() {
     const offline = state.error instanceof CorpusUnavailableError;
     return (
       <div className="app">
-        <div className="state">
-          <div className="glyph" />
-          <h2>{offline ? 'Nothing cached yet' : 'Could not load the rankings'}</h2>
-          <p>
-            {offline
+        <EmptyState
+          headingLevel={2}
+          title={offline ? 'Nothing cached yet' : 'Could not load the rankings'}
+          description={
+            offline
               ? 'GameRankScout works offline once it has loaded a ranking, but it needs a connection the first time.'
-              : 'The ranking data could not be read. This is usually temporary.'}
-          </p>
-          <button type="button" className="button" onClick={load}>
-            Try again
-          </button>
-        </div>
+              : 'The ranking data could not be read. This is usually temporary.'
+          }
+          actions={<Button label="Try again" onClick={load} />}
+        />
       </div>
     );
   }
@@ -251,20 +251,18 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="masthead">
-        <h1>GameRankScout</h1>
-        <div className="masthead-end">
-          <span className="freshness">{formatFreshness(loadedCorpus.generatedAt)}</span>
-          <button
-            type="button"
-            className="icon-button"
+      <Stack as="header" direction="horizontal" hAlign="between" vAlign="center" gap={2}>
+        <Heading level={1}>GameRankScout</Heading>
+        <Stack direction="horizontal" vAlign="center" gap={2}>
+          <Text type="supporting">{formatFreshness(loadedCorpus.generatedAt)}</Text>
+          <IconButton
+            label="Settings"
+            variant="ghost"
+            icon={<span aria-hidden="true">☰</span>}
             onClick={() => setShowSettings(true)}
-            aria-label="Settings"
-          >
-            <span aria-hidden="true">☰</span>
-          </button>
-        </div>
-      </header>
+          />
+        </Stack>
+      </Stack>
 
       {(origin === 'cache' || !online) && (
         <p className="notice">
@@ -290,14 +288,11 @@ export function App() {
       )}
 
       {loadedCorpus.games.length === 0 ? (
-        <div className="state">
-          <div className="glyph" />
-          <h2>No games ranked yet</h2>
-          <p>
-            The last update finished without finding enough discussion to rank. The next scheduled
-            run will try again.
-          </p>
-        </div>
+        <EmptyState
+          headingLevel={2}
+          title="No games ranked yet"
+          description="The last update finished without finding enough discussion to rank. The next scheduled run will try again."
+        />
       ) : (
         <>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
@@ -345,17 +340,12 @@ export function App() {
           )}
 
           {result.exhausted ? (
-            <div className="state">
-              <div className="glyph" />
-              <h2>Nothing matches those filters</h2>
-              <p>
-                No game in this corpus fits that combination at any timeframe. Widening it further
-                would not help — there is genuinely nothing there.
-              </p>
-              <button type="button" className="button" onClick={() => setFilters(DEFAULT_FILTERS)}>
-                Reset filters
-              </button>
-            </div>
+            <EmptyState
+              headingLevel={2}
+              title="Nothing matches those filters"
+              description="No game in this corpus fits that combination at any timeframe. Widening it further would not help — there is genuinely nothing there."
+              actions={<Button label="Reset filters" onClick={() => setFilters(DEFAULT_FILTERS)} />}
+            />
           ) : (
             <Ranking ranked={result.ranked} onDismiss={dismissGame} />
           )}

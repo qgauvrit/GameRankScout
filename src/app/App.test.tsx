@@ -345,10 +345,9 @@ describe('app shell', () => {
     );
 
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: /Stardew Valley/i }));
-    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
-      /1 thread across 1 community/i,
-    );
+    // The evidence summary is on the row itself, visible before the sheet opens.
+    await screen.findByRole('button', { name: /Stardew Valley/i });
+    expect(screen.getByText(/1 thread across 1 community/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /settings/i }));
     await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
@@ -357,9 +356,7 @@ describe('app shell', () => {
     expect(await screen.findByText(/1 mention added/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /done/i }));
-    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
-      /2 threads across 2 communities/i,
-    );
+    expect(screen.getByText(/2 threads across 2 communities/i)).toBeInTheDocument();
   });
 
   it('says so plainly when the on-demand path cannot be reached', async () => {

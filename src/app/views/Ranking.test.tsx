@@ -183,18 +183,17 @@ describe('ranking view', () => {
     );
   });
 
-  it('collapses an expanded entry when it is toggled again', async () => {
+  it('opens the evidence in a sheet and closes it again (R9)', async () => {
     const user = userEvent.setup();
     const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
 
     renderRanking(ranked);
-    const toggle = entryFor('Signal Drift');
 
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('region', { name: /Signal Drift/i })).toBeNull();
+    await user.click(entryFor('Signal Drift'));
+    expect(screen.getByRole('region', { name: /Signal Drift/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /close/i }));
     expect(screen.queryByRole('region', { name: /Signal Drift/i })).toBeNull();
   });
 
@@ -212,7 +211,45 @@ describe('ranking view', () => {
 
     renderRanking(ranked);
 
-    expect(entryFor('Signal Drift')).toHaveTextContent(/2 threads.*2 communities/i);
+    // The summary is on the row, visible before the sheet is opened.
+    expect(screen.getByText(/2 threads across 2 communities/i)).toBeInTheDocument();
+  });
+
+  it('reads out a stronger row for more cross-window evidence (R10)', () => {
+    const strongThread = {
+      id: 't_strong',
+      title: 'Discussed everywhere',
+      permalink: 'https://reddit.test/comments/strong/',
+    };
+    const weakThread = {
+      id: 't_weak',
+      title: 'Discussed once',
+      permalink: 'https://reddit.test/comments/weak/',
+    };
+    const ranked = rank([
+      game({
+        id: 'steam:1',
+        name: 'Strong Signal',
+        evidence: [
+          evidence({ community: 'r/a', window: 'week', thread: strongThread }),
+          evidence({ community: 'r/a', window: 'month', thread: strongThread }),
+          evidence({ community: 'r/a', window: 'year', thread: strongThread }),
+        ],
+      }),
+      game({
+        id: 'steam:2',
+        name: 'Weak Signal',
+        evidence: [evidence({ community: 'r/a', window: 'week', thread: weakThread })],
+      }),
+    ]);
+
+    renderRanking(ranked);
+
+    const strong = screen.getByRole('progressbar', { name: /Strong Signal/i });
+    const weak = screen.getByRole('progressbar', { name: /Weak Signal/i });
+    expect(Number(strong.getAttribute('aria-valuenow'))).toBeGreaterThan(
+      Number(weak.getAttribute('aria-valuenow')),
+    );
   });
 
   it('offers to dismiss a game from its own evidence panel', async () => {

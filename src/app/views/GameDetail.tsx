@@ -1,3 +1,4 @@
+import { Badge, Button, Heading, Stack, Text } from '@astryxdesign/core';
 import { DECK_LABELS, ownerBandLabel, platformLabel, sourceLabel, storeLabel } from '../labels.js';
 import { ExternalLink } from './ExternalLink.js';
 import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
@@ -6,8 +7,6 @@ import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
 const MAX_TAGS = 8;
 
 export interface GameDetailProps {
-  /** Matches the `aria-controls` on the entry's toggle. */
-  id: string;
   game: GameEntry;
   /** The records that produced this game's rank, from `RankedGame.contributing`. */
   contributing: EvidenceRecord[];
@@ -56,13 +55,13 @@ export function citedThreads(contributing: EvidenceRecord[]): ThreadCitation[] {
 
 /**
  * The evidence behind one ranked game: where to buy it, what it is, and the
- * discussions that ranked it (R12, R14, R34).
+ * discussions that ranked it (R12, R13). Rendered inside the evidence sheet (R9).
  *
- * Every field here can be absent — enrichment degrades rather than fails (U5) —
- * so each block is either rendered with real content or stated as unresolved.
+ * Every field here can be absent — enrichment degrades rather than fails — so
+ * each block is either rendered with real content or stated as unresolved.
  * Nothing renders as a blank.
  */
-export function GameDetail({ id, game, contributing, onDismiss }: GameDetailProps) {
+export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
   const threads = citedThreads(contributing);
   const owners = ownerBandLabel(game.ownerBand);
   const deck = game.handheld ? DECK_LABELS[game.handheld.deck] : null;
@@ -72,74 +71,77 @@ export function GameDetail({ id, game, contributing, onDismiss }: GameDetailProp
   const alsoOn = game.storeLinks.slice(1);
 
   return (
-    <section className="detail" id={id} aria-label={game.name}>
-      <div className="detail-facts">
-        {game.platforms.map((platform) => (
-          <span className="chip" key={platform}>
-            {platformLabel(platform)}
-          </span>
-        ))}
-        {owners && <span className="chip chip-quiet">{owners}</span>}
-        {deck && <span className="chip chip-quiet">{deck}</span>}
-      </div>
-
-      {tags.length > 0 && (
-        <ul className="tags" aria-label={`Community tags for ${game.name}`}>
-          {tags.map((tag) => (
-            <li className="tag" key={tag}>
-              {tag}
-            </li>
+    <section aria-label={game.name}>
+      <Stack direction="vertical" gap={3}>
+        <Stack direction="horizontal" gap={1} wrap="wrap" vAlign="center">
+          {game.platforms.map((platform) => (
+            <Badge key={platform} label={platformLabel(platform)} />
           ))}
-        </ul>
-      )}
+          {owners && <Badge variant="neutral" label={owners} />}
+          {deck && <Badge variant="neutral" label={deck} />}
+        </Stack>
 
-      {game.storeLinks.length === 0 && (
-        <p className="muted">
-          No store link resolved for this one — the discussions below are still the way in.
-        </p>
-      )}
+        {tags.length > 0 && (
+          <Stack
+            direction="horizontal"
+            gap={1}
+            wrap="wrap"
+            aria-label={`Community tags for ${game.name}`}
+          >
+            {tags.map((tag) => (
+              <Badge key={tag} variant="neutral" label={tag} />
+            ))}
+          </Stack>
+        )}
 
-      {alsoOn.length > 0 && (
-        <div className="detail-stores">
-          <span className="muted">Also on</span>
-          {alsoOn.map((link) => (
-            <ExternalLink className="button button-small" href={link.url} key={link.url}>
-              {storeLabel(link.store)} ↗
-            </ExternalLink>
-          ))}
-        </div>
-      )}
+        {game.storeLinks.length === 0 && (
+          <Text type="supporting">
+            No store link resolved for this one — the discussions below are still the way in.
+          </Text>
+        )}
 
-      <h3 className="detail-heading">Why it ranked</h3>
-      {threads.length > 0 ? (
-        <ul className="threads">
-          {threads.map((thread) => (
-            <li className="thread" key={thread.key}>
-              <ExternalLink className="thread-link" href={thread.permalink}>
-                {thread.title}
+        {alsoOn.length > 0 && (
+          <Stack direction="horizontal" gap={2} wrap="wrap" vAlign="center">
+            <Text type="supporting">Also on</Text>
+            {alsoOn.map((link) => (
+              <ExternalLink href={link.url} key={link.url}>
+                {storeLabel(link.store)} ↗
               </ExternalLink>
-              <span className="thread-origin">
-                {thread.community} · {sourceLabel(thread.source)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">
-          The threads behind this entry came from a source that is switched off.
-        </p>
-      )}
+            ))}
+          </Stack>
+        )}
 
-      {/*
-        Deliberately not naming the game: the button sits inside a region
-        already labelled with it, and repeating the name here would collide with
-        the entry's own control for anything selecting by accessible name.
-      */}
-      <div className="detail-actions">
-        <button type="button" className="link-button" onClick={() => onDismiss(game.id)}>
-          Not for me — hide this game
-        </button>
-      </div>
+        <Heading level={3}>Why it ranked</Heading>
+        {threads.length > 0 ? (
+          <Stack direction="vertical" gap={2}>
+            {threads.map((thread) => (
+              <Stack key={thread.key} direction="vertical" gap={0.5}>
+                <ExternalLink href={thread.permalink} isStandalone>
+                  {thread.title}
+                </ExternalLink>
+                <Text type="supporting">
+                  {thread.community} · {sourceLabel(thread.source)}
+                </Text>
+              </Stack>
+            ))}
+          </Stack>
+        ) : (
+          <Text type="supporting">
+            The threads behind this entry came from a source that is switched off.
+          </Text>
+        )}
+
+        {/*
+          Deliberately not naming the game: the button sits inside a region
+          already labelled with it, and repeating the name here would collide
+          with the entry's own control for anything selecting by accessible name.
+        */}
+        <Button
+          variant="ghost"
+          label="Not for me — hide this game"
+          onClick={() => onDismiss(game.id)}
+        />
+      </Stack>
     </section>
   );
 }

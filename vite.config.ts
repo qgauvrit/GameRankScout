@@ -16,7 +16,7 @@ export default defineConfig({
       manifest: false,
       includeAssets: ['icon.svg', 'icons/*.png', 'manifest.webmanifest'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest,woff2}'],
         // The corpus has its own cache with schema-version invalidation, so the
         // service worker must not also hold a copy it cannot reason about.
         navigateFallbackDenylist: [/^\/corpus\.json$/],

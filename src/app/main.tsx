@@ -4,6 +4,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { Theme } from '@astryxdesign/core/theme';
 import { App } from './App.js';
 import { grsTheme } from './theme.js';
+import './fonts.js';
 import './styles.css';
 
 const root = document.getElementById('root');

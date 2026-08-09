@@ -16,6 +16,7 @@ import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
 import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import { RANKING_WINDOWS } from '../corpus/schema.js';
+import * as stylex from '@stylexjs/stylex';
 import { Button, EmptyState, Heading, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
 import { StatusLine, type StatusItem } from './views/StatusLine.js';
 import type { LoadedCorpus } from './corpus.js';
@@ -25,6 +26,19 @@ import type { CommunityRef } from '../communities/catalogue.js';
 import type { AdhocState } from './adhoc/client.js';
 
 const CORPUS_URL = '/corpus.json';
+
+/** The page container: a single centred reading column that fills the viewport. */
+const styles = stylex.create({
+  app: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100dvh',
+    maxWidth: '46rem',
+    marginInline: 'auto',
+    paddingInline: '1rem',
+    paddingBottom: 'env(safe-area-inset-bottom)',
+  },
+});
 
 type LoadState =
   | { status: 'loading' }
@@ -203,7 +217,7 @@ export function App() {
 
   if (state.status === 'loading') {
     return (
-      <div className="app">
+      <div {...stylex.props(styles.app)}>
         <EmptyState
           headingLevel={2}
           icon={<Spinner />}
@@ -217,7 +231,7 @@ export function App() {
   if (state.status === 'unavailable') {
     const offline = state.error instanceof CorpusUnavailableError;
     return (
-      <div className="app">
+      <div {...stylex.props(styles.app)}>
         <EmptyState
           headingLevel={2}
           title={offline ? 'Nothing cached yet' : 'Could not load the rankings'}
@@ -237,7 +251,7 @@ export function App() {
 
   if (showSettings) {
     return (
-      <div className="app">
+      <div {...stylex.props(styles.app)}>
         <Settings
           state={reader}
           onChange={setReader}
@@ -333,7 +347,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div {...stylex.props(styles.app)}>
       <Stack as="header" direction="horizontal" hAlign="between" vAlign="center" gap={2}>
         <Heading level={1}>GameRankScout</Heading>
         <Stack direction="horizontal" vAlign="center" gap={2}>

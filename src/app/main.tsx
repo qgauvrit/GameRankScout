@@ -5,7 +5,6 @@ import { Theme } from '@astryxdesign/core/theme';
 import { App } from './App.js';
 import { grsTheme } from './theme.js';
 import './fonts.js';
-import './styles.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

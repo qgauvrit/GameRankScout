@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button, CheckboxInput, Heading, Stack, Text, TextInput } from '@astryxdesign/core';
 import { CURATED_COMMUNITIES, RECOMMENDED_COMMUNITIES } from '../../communities/catalogue.js';
 import { parseCommunityInput } from '../state/local.js';
 import { sourceLabel } from '../labels.js';
@@ -64,23 +65,15 @@ function Row({
   onRemove?: () => void;
 }) {
   return (
-    <li>
-      <label className="switch">
-        <input type="checkbox" checked={checked} onChange={onToggle} />
-        <span className="switch-text">
-          <span className="switch-name">{community.id}</span>
-          <span className="switch-note">
-            {sourceLabel(community.source)}
-            {note}
-          </span>
-        </span>
-      </label>
-      {onRemove && (
-        <button type="button" className="link-button" onClick={onRemove}>
-          Remove
-        </button>
-      )}
-    </li>
+    <Stack direction="horizontal" gap={2} vAlign="center" hAlign="between">
+      <CheckboxInput
+        label={community.id}
+        description={`${sourceLabel(community.source)}${note}`}
+        value={checked}
+        onChange={onToggle}
+      />
+      {onRemove && <Button variant="ghost" size="sm" label="Remove" onClick={onRemove} />}
+    </Stack>
   );
 }
 
@@ -137,70 +130,69 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
   };
 
   return (
-    <section className="settings-section" aria-label="Communities">
-      <h3>Communities</h3>
+    <section aria-label="Communities">
+      <Stack direction="vertical" gap={3}>
+        <Heading level={3}>Communities</Heading>
 
-      <h4 className="settings-subheading">On by default</h4>
-      <ul className="switch-list">
-        {CURATED_COMMUNITIES.map((community) => (
-          <Row
-            key={community.id}
-            community={community}
-            checked={!state.disabledCommunities.includes(community.id)}
-            note={covered(community.id) ? '' : NOT_YET_SWEPT}
-            onToggle={() => toggleDisabled(community.id)}
-          />
-        ))}
-      </ul>
-
-      <h4 className="settings-subheading">Also recommended</h4>
-      <ul className="switch-list">
-        {RECOMMENDED_COMMUNITIES.map((community) => (
-          <Row
-            key={community.id}
-            community={community}
-            checked={
-              state.enabledRecommended.includes(community.id) &&
-              !state.disabledCommunities.includes(community.id)
-            }
-            note={covered(community.id) ? '' : NOT_YET_SWEPT}
-            onToggle={() => toggleRecommended(community.id)}
-          />
-        ))}
-      </ul>
-
-      <h4 className="settings-subheading">Yours</h4>
-      {state.addedCommunities.length > 0 && (
-        <ul className="switch-list">
-          {state.addedCommunities.map((community) => (
+        <Stack direction="vertical" gap={2}>
+          <Heading level={4}>On by default</Heading>
+          {CURATED_COMMUNITIES.map((community) => (
             <Row
               key={community.id}
               community={community}
               checked={!state.disabledCommunities.includes(community.id)}
-              note={adhocNote(adhoc[community.id], covered(community.id))}
+              note={covered(community.id) ? '' : NOT_YET_SWEPT}
               onToggle={() => toggleDisabled(community.id)}
-              onRemove={() =>
-                onChange({
-                  ...state,
-                  addedCommunities: state.addedCommunities.filter(
-                    (entry) => entry.id !== community.id,
-                  ),
-                })
-              }
             />
           ))}
-        </ul>
-      )}
+        </Stack>
 
-      <div className="add-community">
-        <label className="field">
-          <span className="field-label">Add a community</span>
-          <input
-            type="text"
+        <Stack direction="vertical" gap={2}>
+          <Heading level={4}>Also recommended</Heading>
+          {RECOMMENDED_COMMUNITIES.map((community) => (
+            <Row
+              key={community.id}
+              community={community}
+              checked={
+                state.enabledRecommended.includes(community.id) &&
+                !state.disabledCommunities.includes(community.id)
+              }
+              note={covered(community.id) ? '' : NOT_YET_SWEPT}
+              onToggle={() => toggleRecommended(community.id)}
+            />
+          ))}
+        </Stack>
+
+        {state.addedCommunities.length > 0 && (
+          <Stack direction="vertical" gap={2}>
+            <Heading level={4}>Yours</Heading>
+            {state.addedCommunities.map((community) => (
+              <Row
+                key={community.id}
+                community={community}
+                checked={!state.disabledCommunities.includes(community.id)}
+                note={adhocNote(adhoc[community.id], covered(community.id))}
+                onToggle={() => toggleDisabled(community.id)}
+                onRemove={() =>
+                  onChange({
+                    ...state,
+                    addedCommunities: state.addedCommunities.filter(
+                      (entry) => entry.id !== community.id,
+                    ),
+                  })
+                }
+              />
+            ))}
+          </Stack>
+        )}
+
+        <Stack direction="horizontal" gap={2} vAlign="end">
+          <TextInput
+            label="Add a community"
             value={draft}
             placeholder="r/cozygames"
-            onChange={(event) => {
-              setDraft(event.target.value);
+            onChange={(value) => {
+              setDraft(value);
               setError(null);
             }}
             onKeyDown={(event) => {
@@ -210,16 +202,14 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
               }
             }}
           />
-        </label>
-        <button type="button" className="button" onClick={add}>
-          Add
-        </button>
-      </div>
-      {error && (
-        <p className="muted" role="alert">
-          {error}
-        </p>
-      )}
+          <Button variant="secondary" label="Add" onClick={add} />
+        </Stack>
+        {error && (
+          <Text type="supporting" role="alert">
+            {error}
+          </Text>
+        )}
+      </Stack>
     </section>
   );
 }

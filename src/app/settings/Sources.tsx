@@ -1,3 +1,4 @@
+import { CheckboxInput, Heading, Stack, Text } from '@astryxdesign/core';
 import { SOURCE_IDS } from '../../corpus/schema.js';
 import { sourceLabel } from '../labels.js';
 import type { SourceId, SourceStatus } from '../../corpus/schema.js';
@@ -38,31 +39,24 @@ export function Sources({ enabled, onToggle, status }: SourcesProps) {
   const byId = new Map(status.map((entry) => [entry.source, entry]));
 
   return (
-    <section className="settings-section" aria-label="Sources">
-      <h3>Sources</h3>
-      <p className="muted">
-        Evidence from a source you switch off stops counting straight away — nothing is re-fetched.
-      </p>
-      <ul className="switch-list">
-        {SOURCE_IDS.map((source) => {
-          const outcome = byId.get(source);
-          return (
-            <li key={source}>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={enabled.includes(source)}
-                  onChange={() => onToggle(source)}
-                />
-                <span className="switch-text">
-                  <span className="switch-name">{sourceLabel(source)}</span>
-                  <span className="switch-note">{sourceNote(outcome)}</span>
-                </span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+    <section aria-label="Sources">
+      <Stack direction="vertical" gap={2}>
+        <Heading level={3}>Sources</Heading>
+        <Text type="supporting">
+          Evidence from a source you switch off stops counting straight away — nothing is re-fetched.
+        </Text>
+        <Stack direction="vertical" gap={2}>
+          {SOURCE_IDS.map((source) => (
+            <CheckboxInput
+              key={source}
+              label={sourceLabel(source)}
+              description={sourceNote(byId.get(source))}
+              value={enabled.includes(source)}
+              onChange={() => onToggle(source)}
+            />
+          ))}
+        </Stack>
+      </Stack>
     </section>
   );
 }

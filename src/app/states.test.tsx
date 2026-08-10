@@ -32,21 +32,16 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
 
 describe('every reachable state is a designed one', () => {
-  it('first run: says what the default lens is, and stops saying it once acknowledged', async () => {
-    const user = userEvent.setup();
+  it('first run: the default lens is explained by an info affordance, not a lingering banner', async () => {
     serve(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));
 
-    const { unmount } = render(<App />);
-    expect(await screen.findByText(/this is hidden gems/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /got it/i }));
-    expect(screen.queryByText(/this is hidden gems/i)).toBeNull();
-
-    // And it does not come back on the next visit.
-    unmount();
     render(<App />);
     await screen.findByRole('button', { name: /Signal Drift/i });
-    expect(screen.queryByText(/this is hidden gems/i)).toBeNull();
+
+    // No intro banner across the top, and no once-only "Got it" dismissal.
+    expect(screen.queryByRole('button', { name: /got it/i })).toBeNull();
+    // The active lens is explained on demand, next to the mode chips.
+    expect(screen.getByRole('button', { name: /what hidden gems means/i })).toBeInTheDocument();
   });
 
   it('cold open: renders a usable ranking with no configuration (R31)', async () => {

@@ -293,28 +293,6 @@ export function App() {
     });
   }
 
-  if (hasRanking && !reader.introSeen) {
-    statuses.push({
-      key: 'intro',
-      tone: 'info',
-      title: 'This is Hidden gems.',
-      description: (
-        <Stack direction="vertical" gap={1} hAlign="start">
-          <Text type="body">
-            Ranked by how much communities are discussing a game, then pushed down for how many
-            people already own it. Open an entry to see the threads behind it.
-          </Text>
-          <Button
-            variant="ghost"
-            size="sm"
-            label="Got it"
-            onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
-          />
-        </Stack>
-      ),
-    });
-  }
-
   if (hasRanking && !momentumAvailable(loadedCorpus.games, reader.filters.mode)) {
     statuses.push({
       key: 'momentum',
@@ -362,7 +340,7 @@ export function App() {
           description="The last update finished without finding enough discussion to rank. The next scheduled run will try again."
         />
       ) : (
-        <>
+        <Stack direction="vertical" gap={4}>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
 
           {result.exhausted ? (
@@ -375,7 +353,7 @@ export function App() {
           ) : (
             <Ranking ranked={result.ranked} onDismiss={dismissGame} />
           )}
-        </>
+        </Stack>
       )}
     </div>
   );

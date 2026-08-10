@@ -276,39 +276,33 @@ export function App() {
   if (origin === 'cache' || !online) {
     statuses.push({
       key: 'offline',
-      content: (
-        <Text type="body">
-          <strong>Showing the last ranking you loaded.</strong> You are offline, so this may be
-          behind what communities are discussing now.
-        </Text>
-      ),
+      tone: 'warning',
+      title: 'Showing the last ranking you loaded.',
+      description: 'You are offline, so this may be behind what communities are discussing now.',
     });
   }
 
   if (failedSources.length > 0) {
     statuses.push({
       key: 'failed',
-      content: (
-        <Text type="body">
-          <strong>
-            {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
-            during the last update.
-          </strong>{' '}
-          The ranking is built from the sources that did, so it is thinner than usual.
-        </Text>
-      ),
+      tone: 'warning',
+      title: `${failedSources
+        .map((source) => sourceLabel(source.source))
+        .join(', ')} did not respond during the last update.`,
+      description: 'The ranking is built from the sources that did, so it is thinner than usual.',
     });
   }
 
   if (hasRanking && !reader.introSeen) {
     statuses.push({
       key: 'intro',
-      content: (
+      tone: 'info',
+      title: 'This is Hidden gems.',
+      description: (
         <Stack direction="vertical" gap={1} hAlign="start">
           <Text type="body">
-            <strong>This is Hidden gems.</strong> Ranked by how much communities are discussing a
-            game, then pushed down for how many people already own it. Open an entry to see the
-            threads behind it.
+            Ranked by how much communities are discussing a game, then pushed down for how many
+            people already own it. Open an entry to see the threads behind it.
           </Text>
           <Button
             variant="ghost"
@@ -324,28 +318,23 @@ export function App() {
   if (hasRanking && !momentumAvailable(loadedCorpus.games, reader.filters.mode)) {
     statuses.push({
       key: 'momentum',
+      tone: 'info',
       live: true,
-      content: (
-        <Text type="body">
-          <strong>{MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.</strong>{' '}
-          The last update did not cover the recent window this mode needs, so these are ranked
-          without any sense of momentum.
-        </Text>
-      ),
+      title: `${MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.`,
+      description:
+        'The last update did not cover the recent window this mode needs, so these are ranked without any sense of momentum.',
     });
   }
 
   if (hasRanking && result.relaxedFrom) {
     statuses.push({
       key: 'relaxed',
+      tone: 'info',
       live: true,
-      content: (
-        <Text type="body">
-          <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
-          Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every other
-          filter is untouched.
-        </Text>
-      ),
+      title: `Not much matched in the ${WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.`,
+      description: `Widened the timeframe to the ${WINDOW_LABELS[
+        result.window
+      ].toLowerCase()} — every other filter is untouched.`,
     });
   }
 

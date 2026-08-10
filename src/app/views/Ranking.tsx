@@ -1,10 +1,36 @@
 import { useState } from 'react';
 import { ClickableCard, EmptyState, ProgressBar, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { EvidenceSheet } from './EvidenceSheet.js';
 import { ExternalLink } from './ExternalLink.js';
 import { storeLabel } from '../labels.js';
 import { MAX_MAGNITUDE } from '../../ranking/magnitude.js';
 import type { RankedGame } from '../../ranking/score.js';
+
+/**
+ * Layout styling lives in StyleX rather than inline `style` attributes so the
+ * app authors no inline styles of its own — keeping the `public/_headers` CSP
+ * comment ("no inline style attributes") honest and the styling consistent with
+ * the rest of the app (see the plan's KTD6). Note the Astryx `ProgressBar` still
+ * emits its own inline `style` for the dynamic fill width; that is the design
+ * system's, not ours.
+ */
+const styles = stylex.create({
+  /** The fixed-width column the evidence-strength meter sits in. */
+  strengthMeter: {
+    width: 72,
+    flexShrink: 0,
+  },
+  /** The ranked list: a plain flex column with no list chrome. */
+  list: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+});
 
 export interface RankingProps {
   ranked: RankedGame[];
@@ -65,7 +91,7 @@ function Entry({
           </Stack>
 
           <Stack direction="horizontal" gap={3} vAlign="center">
-            <div style={{ width: 72, flexShrink: 0 }}>
+            <div {...stylex.props(styles.strengthMeter)}>
               <ProgressBar
                 value={strengthPercent(entry)}
                 max={100}
@@ -106,7 +132,7 @@ export function Ranking({ ranked, onDismiss }: RankingProps) {
 
   return (
     <>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <ol {...stylex.props(styles.list)}>
         {ranked.map((entry, index) => (
           <Entry entry={entry} key={entry.game.id} position={index + 1} onOpen={setOpenId} />
         ))}

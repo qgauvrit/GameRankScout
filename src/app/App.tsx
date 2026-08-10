@@ -36,6 +36,9 @@ const styles = stylex.create({
     maxWidth: '46rem',
     marginInline: 'auto',
     paddingInline: '1rem',
+    // Give the masthead room from the viewport top; on a notched device clear
+    // the status bar instead of tucking under it.
+    paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
     paddingBottom: 'env(safe-area-inset-bottom)',
   },
 });

@@ -1,14 +1,14 @@
 {
-  "startedAt": "2026-08-09T05:56:30.052Z",
-  "finishedAt": "2026-08-09T08:11:50.961Z",
+  "startedAt": "2026-08-10T06:21:44.819Z",
+  "finishedAt": "2026-08-10T08:37:22.851Z",
   "ok": true,
   "sources": [
     {
       "source": "reddit",
       "ok": true,
-      "evidenceCount": 7052,
+      "evidenceCount": 7031,
       "communitiesCovered": 34,
-      "rejections": 1,
+      "rejections": 0,
       "error": null
     },
     {
@@ -22,14 +22,14 @@
     {
       "source": "itch",
       "ok": true,
-      "evidenceCount": 2,
+      "evidenceCount": 1,
       "communitiesCovered": 1,
       "rejections": 0,
       "error": null
     }
   ],
-  "games": 1075,
-  "evidence": 7123,
-  "corpusBytes": 3532994,
-  "publish": "published"
+  "games": 1072,
+  "evidence": 7101,
+  "corpusBytes": 3523203,
+  "publish": "not_attempted"
 }

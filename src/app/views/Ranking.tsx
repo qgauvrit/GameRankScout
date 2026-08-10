@@ -100,7 +100,7 @@ function Entry({
               />
             </div>
             {primaryStore && (
-              <ExternalLink href={primaryStore.url}>{storeLabel(primaryStore.store)} ↗</ExternalLink>
+              <ExternalLink href={primaryStore.url}>{storeLabel(primaryStore.store)}</ExternalLink>
             )}
           </Stack>
         </Stack>

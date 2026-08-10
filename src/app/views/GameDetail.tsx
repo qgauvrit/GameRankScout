@@ -105,7 +105,7 @@ export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
             <Text type="supporting">Also on</Text>
             {alsoOn.map((link) => (
               <ExternalLink href={link.url} key={link.url}>
-                {storeLabel(link.store)} ↗
+                {storeLabel(link.store)}
               </ExternalLink>
             ))}
           </Stack>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClickableCard, EmptyState, ProgressBar, Stack, Text } from '@astryxdesign/core';
+import { ClickableCard, EmptyState, HoverCard, ProgressBar, Stack, Text } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 import { EvidenceSheet } from './EvidenceSheet.js';
 import { ExternalLink } from './ExternalLink.js';
@@ -29,6 +29,10 @@ const styles = stylex.create({
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+  },
+  /** Keeps a hover explanation to a readable measure rather than a full-width line. */
+  hint: {
+    maxWidth: '18rem',
   },
 });
 
@@ -77,6 +81,7 @@ function Entry({
 }) {
   const { game } = entry;
   const primaryStore = game.storeLinks[0];
+  const strength = strengthPercent(entry);
 
   return (
     <li>
@@ -91,14 +96,26 @@ function Entry({
           </Stack>
 
           <Stack direction="horizontal" gap={3} vAlign="center">
-            <div {...stylex.props(styles.strengthMeter)}>
-              <ProgressBar
-                value={strengthPercent(entry)}
-                max={100}
-                label={`Evidence strength for ${game.name}`}
-                isLabelHidden
-              />
-            </div>
+            <HoverCard
+              placement="above"
+              content={
+                <div {...stylex.props(styles.hint)}>
+                  <Text type="supporting">
+                    Evidence strength {strength}% — how much this game is being discussed across
+                    communities and time windows, relative to the strongest entry.
+                  </Text>
+                </div>
+              }
+            >
+              <div {...stylex.props(styles.strengthMeter)}>
+                <ProgressBar
+                  value={strength}
+                  max={100}
+                  label={`Evidence strength for ${game.name}`}
+                  isLabelHidden
+                />
+              </div>
+            </HoverCard>
             {primaryStore && (
               <ExternalLink href={primaryStore.url}>{storeLabel(primaryStore.store)}</ExternalLink>
             )}

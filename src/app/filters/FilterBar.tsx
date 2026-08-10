@@ -1,8 +1,16 @@
 import { Button, HoverCard, Icon, IconButton, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { MODE_DESCRIPTIONS, MODE_LABELS } from '../labels.js';
 import { FiltersSheet } from './FiltersSheet.js';
 import type { Filters } from './apply.js';
 import type { RankingMode } from '../../ranking/modes.js';
+
+const styles = stylex.create({
+  /** Keeps the mode explanation to a readable measure, not a full-width line. */
+  hint: {
+    maxWidth: '18rem',
+  },
+});
 
 const MODES = Object.keys(MODE_LABELS) as RankingMode[];
 
@@ -43,7 +51,11 @@ export function FilterBar({ filters, onChange, tags }: FilterBarProps) {
         */}
         <HoverCard
           placement="below"
-          content={<Text type="body">{MODE_DESCRIPTIONS[filters.mode]}</Text>}
+          content={
+            <div {...stylex.props(styles.hint)}>
+              <Text type="body">{MODE_DESCRIPTIONS[filters.mode]}</Text>
+            </div>
+          }
         >
           <IconButton
             variant="ghost"

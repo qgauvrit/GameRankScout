@@ -1,13 +1,65 @@
+import { useState } from 'react';
+import { Badge, Button, Heading, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { DECK_LABELS, ownerBandLabel, platformLabel, sourceLabel, storeLabel } from '../labels.js';
 import { ExternalLink } from './ExternalLink.js';
+import { steamHeaderImage } from './steamImage.js';
 import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
 
 /** How many community tags a detail panel shows before it stops being scannable. */
 const MAX_TAGS = 8;
 
+const styles = stylex.create({
+  /** Reserves the hero's box so nothing shifts as it loads or fails. */
+  heroFrame: {
+    width: '100%',
+    aspectRatio: '460 / 215',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  /** Shown in the same reserved frame when the image 404s or is blocked. */
+  heroPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+});
+
+/**
+ * The Steam store header, in a fixed frame that never collapses. Steam is the
+ * only store in the corpus and every hero rides on one CDN URL, so the real risk
+ * is a blocked or 404 image (or a CDN-host migration) — `onError` swaps to a
+ * quiet placeholder in the same reserved box rather than leaving a broken image
+ * or a layout jump. Decorative (`alt=""`): the section is already labelled with
+ * the game's name. Referrer withheld so the CDN learns nothing about the reader.
+ */
+function Hero({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div {...stylex.props(styles.heroFrame)} aria-label={`${name} store image`}>
+      {failed ? (
+        <div {...stylex.props(styles.heroPlaceholder)} aria-hidden="true" />
+      ) : (
+        <img
+          {...stylex.props(styles.heroImage)}
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          fetchPriority="high"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
+  );
+}
+
 export interface GameDetailProps {
-  /** Matches the `aria-controls` on the entry's toggle. */
-  id: string;
   game: GameEntry;
   /** The records that produced this game's rank, from `RankedGame.contributing`. */
   contributing: EvidenceRecord[];
@@ -56,13 +108,13 @@ export function citedThreads(contributing: EvidenceRecord[]): ThreadCitation[] {
 
 /**
  * The evidence behind one ranked game: where to buy it, what it is, and the
- * discussions that ranked it (R12, R14, R34).
+ * discussions that ranked it (R12, R13). Rendered inside the evidence sheet (R9).
  *
- * Every field here can be absent — enrichment degrades rather than fails (U5) —
- * so each block is either rendered with real content or stated as unresolved.
+ * Every field here can be absent — enrichment degrades rather than fails — so
+ * each block is either rendered with real content or stated as unresolved.
  * Nothing renders as a blank.
  */
-export function GameDetail({ id, game, contributing, onDismiss }: GameDetailProps) {
+export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
   const threads = citedThreads(contributing);
   const owners = ownerBandLabel(game.ownerBand);
   const deck = game.handheld ? DECK_LABELS[game.handheld.deck] : null;
@@ -70,76 +122,95 @@ export function GameDetail({ id, game, contributing, onDismiss }: GameDetailProp
   // The primary store link is already on the entry itself, one tap away from
   // the list; repeating it here would only pad the panel.
   const alsoOn = game.storeLinks.slice(1);
+  const heroSrc = steamHeaderImage(game.storeLinks);
+  // The availability block carries anything about where and how to play it.
+  const hasAvailability =
+    game.platforms.length > 0 ||
+    Boolean(owners) ||
+    Boolean(deck) ||
+    alsoOn.length > 0 ||
+    game.storeLinks.length === 0;
 
   return (
-    <section className="detail" id={id} aria-label={game.name}>
-      <div className="detail-facts">
-        {game.platforms.map((platform) => (
-          <span className="chip" key={platform}>
-            {platformLabel(platform)}
-          </span>
-        ))}
-        {owners && <span className="chip chip-quiet">{owners}</span>}
-        {deck && <span className="chip chip-quiet">{deck}</span>}
-      </div>
+    <section aria-label={game.name}>
+      <Stack direction="vertical" gap={3}>
+        <Heading level={2}>{game.name}</Heading>
 
-      {tags.length > 0 && (
-        <ul className="tags" aria-label={`Community tags for ${game.name}`}>
-          {tags.map((tag) => (
-            <li className="tag" key={tag}>
-              {tag}
-            </li>
-          ))}
-        </ul>
-      )}
+        {/* Key on the src so the failed-load state can never outlive its image. */}
+        {heroSrc && <Hero key={heroSrc} src={heroSrc} name={game.name} />}
 
-      {game.storeLinks.length === 0 && (
-        <p className="muted">
-          No store link resolved for this one — the discussions below are still the way in.
-        </p>
-      )}
+        {hasAvailability && (
+          <Stack direction="vertical" gap={1}>
+            <Heading level={3}>Availability</Heading>
+            <Stack direction="horizontal" gap={1} wrap="wrap" vAlign="center">
+              {game.platforms.map((platform) => (
+                <Badge key={platform} label={platformLabel(platform)} />
+              ))}
+              {owners && <Badge variant="neutral" label={owners} />}
+              {deck && <Badge variant="neutral" label={deck} />}
+            </Stack>
 
-      {alsoOn.length > 0 && (
-        <div className="detail-stores">
-          <span className="muted">Also on</span>
-          {alsoOn.map((link) => (
-            <ExternalLink className="button button-small" href={link.url} key={link.url}>
-              {storeLabel(link.store)} ↗
-            </ExternalLink>
-          ))}
-        </div>
-      )}
+            {game.storeLinks.length === 0 && (
+              <Text type="supporting">
+                No store link resolved for this one — the discussions below are still the way in.
+              </Text>
+            )}
 
-      <h3 className="detail-heading">Why it ranked</h3>
-      {threads.length > 0 ? (
-        <ul className="threads">
-          {threads.map((thread) => (
-            <li className="thread" key={thread.key}>
-              <ExternalLink className="thread-link" href={thread.permalink}>
-                {thread.title}
-              </ExternalLink>
-              <span className="thread-origin">
-                {thread.community} · {sourceLabel(thread.source)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">
-          The threads behind this entry came from a source that is switched off.
-        </p>
-      )}
+            {alsoOn.length > 0 && (
+              <Stack direction="horizontal" gap={2} wrap="wrap" vAlign="center">
+                <Text type="supporting">Also on</Text>
+                {alsoOn.map((link) => (
+                  <ExternalLink href={link.url} key={link.url}>
+                    {storeLabel(link.store)}
+                  </ExternalLink>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        )}
 
-      {/*
-        Deliberately not naming the game: the button sits inside a region
-        already labelled with it, and repeating the name here would collide with
-        the entry's own control for anything selecting by accessible name.
-      */}
-      <div className="detail-actions">
-        <button type="button" className="link-button" onClick={() => onDismiss(game.id)}>
-          Not for me — hide this game
-        </button>
-      </div>
+        {tags.length > 0 && (
+          <Stack direction="vertical" gap={1}>
+            <Heading level={3}>Community tags</Heading>
+            <Stack direction="horizontal" gap={1} wrap="wrap">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="neutral" label={tag} />
+              ))}
+            </Stack>
+          </Stack>
+        )}
+
+        <Heading level={3}>Why it ranked</Heading>
+        {threads.length > 0 ? (
+          <Stack direction="vertical" gap={2}>
+            {threads.map((thread) => (
+              <Stack key={thread.key} direction="vertical" gap={0.5}>
+                <ExternalLink href={thread.permalink} isStandalone>
+                  {thread.title}
+                </ExternalLink>
+                <Text type="supporting">
+                  {thread.community} · {sourceLabel(thread.source)}
+                </Text>
+              </Stack>
+            ))}
+          </Stack>
+        ) : (
+          <Text type="supporting">
+            The threads behind this entry came from a source that is switched off.
+          </Text>
+        )}
+
+        {/*
+          Deliberately not naming the game: the button sits inside a region
+          already labelled with it, and repeating the name here would collide
+          with the entry's own control for anything selecting by accessible name.
+        */}
+        <Button
+          variant="ghost"
+          label="Not for me — hide this game"
+          onClick={() => onDismiss(game.id)}
+        />
+      </Stack>
     </section>
   );
 }

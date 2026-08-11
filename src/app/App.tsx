@@ -16,6 +16,9 @@ import { AdhocUnavailableError, fetchAdhocCommunity } from './adhoc/client.js';
 import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import { RANKING_WINDOWS } from '../corpus/schema.js';
+import * as stylex from '@stylexjs/stylex';
+import { Button, EmptyState, Heading, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
+import { StatusLine, type StatusItem } from './views/StatusLine.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
 import type { ReaderState } from './state/local.js';
@@ -23,6 +26,22 @@ import type { CommunityRef } from '../communities/catalogue.js';
 import type { AdhocState } from './adhoc/client.js';
 
 const CORPUS_URL = '/corpus.json';
+
+/** The page container: a single centred reading column that fills the viewport. */
+const styles = stylex.create({
+  app: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100dvh',
+    maxWidth: '46rem',
+    marginInline: 'auto',
+    paddingInline: '1rem',
+    // Give the masthead room from the viewport top; on a notched device clear
+    // the status bar instead of tucking under it.
+    paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
+    paddingBottom: 'env(safe-area-inset-bottom)',
+  },
+});
 
 type LoadState =
   | { status: 'loading' }
@@ -201,12 +220,13 @@ export function App() {
 
   if (state.status === 'loading') {
     return (
-      <div className="app">
-        <div className="state">
-          <div className="glyph spinning" />
-          <h2>Reading the room</h2>
-          <p>Pulling in what communities have been discussing.</p>
-        </div>
+      <div {...stylex.props(styles.app)}>
+        <EmptyState
+          headingLevel={2}
+          icon={<Spinner />}
+          title="Reading the room"
+          description="Pulling in what communities have been discussing."
+        />
       </div>
     );
   }
@@ -214,19 +234,17 @@ export function App() {
   if (state.status === 'unavailable') {
     const offline = state.error instanceof CorpusUnavailableError;
     return (
-      <div className="app">
-        <div className="state">
-          <div className="glyph" />
-          <h2>{offline ? 'Nothing cached yet' : 'Could not load the rankings'}</h2>
-          <p>
-            {offline
+      <div {...stylex.props(styles.app)}>
+        <EmptyState
+          headingLevel={2}
+          title={offline ? 'Nothing cached yet' : 'Could not load the rankings'}
+          description={
+            offline
               ? 'GameRankScout works offline once it has loaded a ranking, but it needs a connection the first time.'
-              : 'The ranking data could not be read. This is usually temporary.'}
-          </p>
-          <button type="button" className="button" onClick={load}>
-            Try again
-          </button>
-        </div>
+              : 'The ranking data could not be read. This is usually temporary.'
+          }
+          actions={<Button label="Try again" onClick={load} />}
+        />
       </div>
     );
   }
@@ -236,7 +254,7 @@ export function App() {
 
   if (showSettings) {
     return (
-      <div className="app">
+      <div {...stylex.props(styles.app)}>
         <Settings
           state={reader}
           onChange={setReader}
@@ -249,117 +267,93 @@ export function App() {
     );
   }
 
+  // Active statuses render as visible themed Banners (R6). The offline and
+  // failed-source states stand on their own; the momentum and relaxed-timeframe
+  // states only apply once there is a ranking to explain.
+  const hasRanking = loadedCorpus.games.length > 0;
+  const statuses: StatusItem[] = [];
+
+  if (origin === 'cache' || !online) {
+    statuses.push({
+      key: 'offline',
+      tone: 'warning',
+      title: 'Showing the last ranking you loaded.',
+      description: 'You are offline, so this may be behind what communities are discussing now.',
+    });
+  }
+
+  if (failedSources.length > 0) {
+    statuses.push({
+      key: 'failed',
+      tone: 'warning',
+      title: `${failedSources
+        .map((source) => sourceLabel(source.source))
+        .join(', ')} did not respond during the last update.`,
+      description: 'The ranking is built from the sources that did, so it is thinner than usual.',
+    });
+  }
+
+  if (hasRanking && !momentumAvailable(loadedCorpus.games, reader.filters.mode)) {
+    statuses.push({
+      key: 'momentum',
+      tone: 'info',
+      live: true,
+      title: `${MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.`,
+      description:
+        'The last update did not cover the recent window this mode needs, so these are ranked without any sense of momentum.',
+    });
+  }
+
+  if (hasRanking && result.relaxedFrom) {
+    statuses.push({
+      key: 'relaxed',
+      tone: 'info',
+      live: true,
+      title: `Not much matched in the ${WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.`,
+      description: `Widened the timeframe to the ${WINDOW_LABELS[
+        result.window
+      ].toLowerCase()} — every other filter is untouched.`,
+    });
+  }
+
   return (
-    <div className="app">
-      <header className="masthead">
-        <h1>GameRankScout</h1>
-        <div className="masthead-end">
-          <span className="freshness">{formatFreshness(loadedCorpus.generatedAt)}</span>
-          <button
-            type="button"
-            className="icon-button"
+    <div {...stylex.props(styles.app)}>
+      <Stack as="header" direction="horizontal" hAlign="between" vAlign="center" gap={2}>
+        <Heading level={1}>GameRankScout</Heading>
+        <Stack direction="horizontal" vAlign="center" gap={2}>
+          <Text type="supporting">{formatFreshness(loadedCorpus.generatedAt)}</Text>
+          <IconButton
+            label="Settings"
+            variant="ghost"
+            icon={<span aria-hidden="true">☰</span>}
             onClick={() => setShowSettings(true)}
-            aria-label="Settings"
-          >
-            <span aria-hidden="true">☰</span>
-          </button>
-        </div>
-      </header>
+          />
+        </Stack>
+      </Stack>
 
-      {(origin === 'cache' || !online) && (
-        <p className="notice">
-          <span aria-hidden="true">◍</span>
-          <span>
-            <strong>Showing the last ranking you loaded.</strong> You are offline, so this may be
-            behind what communities are discussing now.
-          </span>
-        </p>
-      )}
-
-      {failedSources.length > 0 && (
-        <p className="notice">
-          <span aria-hidden="true">◍</span>
-          <span>
-            <strong>
-              {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
-              during the last update.
-            </strong>{' '}
-            The ranking is built from the sources that did, so it is thinner than usual.
-          </span>
-        </p>
-      )}
+      <StatusLine statuses={statuses} />
 
       {loadedCorpus.games.length === 0 ? (
-        <div className="state">
-          <div className="glyph" />
-          <h2>No games ranked yet</h2>
-          <p>
-            The last update finished without finding enough discussion to rank. The next scheduled
-            run will try again.
-          </p>
-        </div>
+        <EmptyState
+          headingLevel={2}
+          title="No games ranked yet"
+          description="The last update finished without finding enough discussion to rank. The next scheduled run will try again."
+        />
       ) : (
-        <>
+        <Stack direction="vertical" gap={4}>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
 
-          {!reader.introSeen && (
-            <p className="notice notice-intro">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>This is Hidden gems.</strong> Ranked by how much communities are
-                discussing a game, then pushed down for how many people already own it. Open an
-                entry to see the threads behind it.
-              </span>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
-              >
-                Got it
-              </button>
-            </p>
-          )}
-
-          {!momentumAvailable(loadedCorpus.games, reader.filters.mode) && (
-            <p className="notice" role="status">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>
-                  {MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.
-                </strong>{' '}
-                The last update did not cover the recent window this mode needs, so these are
-                ranked without any sense of momentum.
-              </span>
-            </p>
-          )}
-
-          {result.relaxedFrom && (
-            <p className="notice" role="status">
-              <span aria-hidden="true">◍</span>
-              <span>
-                <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
-                Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every
-                other filter is untouched.
-              </span>
-            </p>
-          )}
-
           {result.exhausted ? (
-            <div className="state">
-              <div className="glyph" />
-              <h2>Nothing matches those filters</h2>
-              <p>
-                No game in this corpus fits that combination at any timeframe. Widening it further
-                would not help — there is genuinely nothing there.
-              </p>
-              <button type="button" className="button" onClick={() => setFilters(DEFAULT_FILTERS)}>
-                Reset filters
-              </button>
-            </div>
+            <EmptyState
+              headingLevel={2}
+              title="Nothing matches those filters"
+              description="No game in this corpus fits that combination at any timeframe. Widening it further would not help — there is genuinely nothing there."
+              actions={<Button label="Reset filters" onClick={() => setFilters(DEFAULT_FILTERS)} />}
+            />
           ) : (
             <Ranking ranked={result.ranked} onDismiss={dismissGame} />
           )}
-        </>
+        </Stack>
       )}
     </div>
   );

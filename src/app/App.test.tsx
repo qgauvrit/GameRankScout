@@ -142,10 +142,12 @@ describe('app shell', () => {
 
     render(<App />);
 
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(/not much matched in the past week/i);
-    expect(notice).toHaveTextContent(/widened the timeframe to the past month/i);
-    expect(notice).toHaveTextContent(/every other filter is untouched/i);
+    // The relaxed-timeframe status now lives in the collapsed status line as a
+    // single Text element; assert its copy directly. (jsdom does not apply the
+    // collapse CSS, so the mounted copy is findable without expanding.)
+    expect(await screen.findByText(/not much matched in the past week/i)).toBeInTheDocument();
+    expect(screen.getByText(/widened the timeframe to the past month/i)).toBeInTheDocument();
+    expect(screen.getByText(/every other filter is untouched/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Month Game 0/i })).toBeInTheDocument();
   });
 
@@ -185,8 +187,11 @@ describe('app shell', () => {
     await user.selectOptions(screen.getByLabelText(/platform/i), 'ios');
 
     expect(screen.getByRole('heading', { name: /nothing matches those filters/i })).toBeInTheDocument();
-    // Nothing was widened, because widening could not have helped.
-    expect(screen.queryByRole('status')).toBeNull();
+    // Nothing was widened, because widening could not have helped. Assert the
+    // relaxed-timeframe copy is absent directly: role="status" is no longer a
+    // proxy for "a notice showed" now that the exhausted state and Astryx
+    // buttons carry their own status roles.
+    expect(screen.queryByText(/widened the timeframe/i)).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /reset filters/i }));
     expect(screen.getByRole('button', { name: /Desktop Pick/i })).toBeInTheDocument();
@@ -340,10 +345,9 @@ describe('app shell', () => {
     );
 
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: /Stardew Valley/i }));
-    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
-      /1 thread across 1 community/i,
-    );
+    // The evidence summary is on the row itself, visible before the sheet opens.
+    await screen.findByRole('button', { name: /Stardew Valley/i });
+    expect(screen.getByText(/1 thread across 1 community/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /settings/i }));
     await user.type(screen.getByLabelText(/add a community/i), 'r/emulation');
@@ -352,9 +356,7 @@ describe('app shell', () => {
     expect(await screen.findByText(/1 mention added/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /done/i }));
-    expect(screen.getByRole('button', { name: /Stardew Valley/i })).toHaveTextContent(
-      /2 threads across 2 communities/i,
-    );
+    expect(screen.getByText(/2 threads across 2 communities/i)).toBeInTheDocument();
   });
 
   it('says so plainly when the on-demand path cannot be reached', async () => {

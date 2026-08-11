@@ -54,6 +54,16 @@ export const MODE_LABELS: Record<RankingMode, string> = {
   rising: 'Rising',
 };
 
+/** One-line explanation of each ranking mode, shown on the mode info affordance. */
+export const MODE_DESCRIPTIONS: Record<RankingMode, string> = {
+  hiddenGems:
+    'Surfaces games you might not have heard of: ranked by how much communities discuss them, then pushed down for how many people already own them.',
+  top: 'A faithful popularity ranking — the obscurity adjustment set aside, everything else unchanged.',
+  mostDiscussed: 'Ranked by sheer volume of conversation, however well-known the game already is.',
+  breakout: 'Games with a sharp recent spike in discussion against their long-run baseline.',
+  rising: 'Games gaining momentum — a gentler version of Breakout over a longer recent window.',
+};
+
 /** Steam's verdict, phrased the way the badge itself reads on the store. */
 export const DECK_LABELS: Record<string, string | null> = {
   verified: 'Deck Verified',

@@ -1,3 +1,4 @@
+import { Button, Heading, Stack, Text } from '@astryxdesign/core';
 import { Sources } from './Sources.js';
 import { Communities } from './Communities.js';
 import { communityMatches } from '../../communities/catalogue.js';
@@ -35,13 +36,11 @@ export function Settings({ state, onChange, corpus, adhoc, onPull, onClose }: Se
   const unnamed = state.dismissedGameIds.length - dismissed.length;
 
   return (
-    <div className="settings">
-      <div className="settings-head">
-        <h2>Settings</h2>
-        <button type="button" className="button" onClick={onClose}>
-          Done
-        </button>
-      </div>
+    <Stack direction="vertical" gap={4}>
+      <Stack direction="horizontal" hAlign="between" vAlign="center">
+        <Heading level={2}>Settings</Heading>
+        <Button variant="secondary" label="Done" onClick={onClose} />
+      </Stack>
 
       <Sources
         enabled={state.enabledSources}
@@ -64,47 +63,42 @@ export function Settings({ state, onChange, corpus, adhoc, onPull, onClose }: Se
         onPull={onPull}
       />
 
-      <section className="settings-section" aria-label="Dismissed games">
-        <h3>Dismissed games</h3>
-        {state.dismissedGameIds.length === 0 ? (
-          <p className="muted">
-            Nothing dismissed. Games you dismiss stay out of every ranking until you bring them
-            back here.
-          </p>
-        ) : (
-          <>
-            <ul className="switch-list">
+      <section aria-label="Dismissed games">
+        <Stack direction="vertical" gap={2}>
+          <Heading level={3}>Dismissed games</Heading>
+          {state.dismissedGameIds.length === 0 ? (
+            <Text type="supporting">
+              Nothing dismissed. Games you dismiss stay out of every ranking until you bring them
+              back here.
+            </Text>
+          ) : (
+            <>
               {dismissed.map((game) => (
-                <li key={game.id}>
-                  <span className="switch-text">
-                    <span className="switch-name">{game.name}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="link-button"
+                <Stack key={game.id} direction="horizontal" hAlign="between" vAlign="center">
+                  <Text type="body">{game.name}</Text>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label="Bring back"
                     onClick={() =>
                       onChange({
                         ...state,
-                        dismissedGameIds: state.dismissedGameIds.filter(
-                          (id) => id !== game.id,
-                        ),
+                        dismissedGameIds: state.dismissedGameIds.filter((id) => id !== game.id),
                       })
                     }
-                  >
-                    Bring back
-                  </button>
-                </li>
+                  />
+                </Stack>
               ))}
-            </ul>
-            {unnamed > 0 && (
-              <p className="muted">
-                {unnamed} more {unnamed === 1 ? 'game is' : 'games are'} dismissed but not in the
-                current corpus.
-              </p>
-            )}
-          </>
-        )}
+              {unnamed > 0 && (
+                <Text type="supporting">
+                  {unnamed} more {unnamed === 1 ? 'game is' : 'games are'} dismissed but not in the
+                  current corpus.
+                </Text>
+              )}
+            </>
+          )}
+        </Stack>
       </section>
-    </div>
+    </Stack>
   );
 }

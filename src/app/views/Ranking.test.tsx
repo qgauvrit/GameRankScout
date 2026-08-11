@@ -175,7 +175,8 @@ describe('ranking view', () => {
     await user.click(entryFor('Signal Drift'));
 
     // The name and the evidence are what actually resolved, and both still show.
-    expect(screen.getByText('Signal Drift')).toBeTruthy();
+    const detail = within(screen.getByRole('region', { name: /Signal Drift/i }));
+    expect(detail.getByRole('heading', { name: 'Signal Drift' })).toBeTruthy();
     expect(screen.getByRole('link', { name: /Thread/i })).toBeTruthy();
     // A missing store link is stated rather than silently absent.
     expect(screen.getByRole('region', { name: /Signal Drift/i })).toHaveTextContent(

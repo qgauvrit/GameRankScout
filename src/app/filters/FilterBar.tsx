@@ -1,8 +1,16 @@
-import { Button, Stack } from '@astryxdesign/core';
-import { MODE_LABELS } from '../labels.js';
+import { Button, HoverCard, Icon, IconButton, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
+import { MODE_DESCRIPTIONS, MODE_LABELS } from '../labels.js';
 import { FiltersSheet } from './FiltersSheet.js';
 import type { Filters } from './apply.js';
 import type { RankingMode } from '../../ranking/modes.js';
+
+const styles = stylex.create({
+  /** Keeps the mode explanation to a readable measure, not a full-width line. */
+  hint: {
+    maxWidth: '18rem',
+  },
+});
 
 const MODES = Object.keys(MODE_LABELS) as RankingMode[];
 
@@ -27,7 +35,7 @@ export interface FilterBarProps {
 export function FilterBar({ filters, onChange, tags }: FilterBarProps) {
   return (
     <Stack direction="horizontal" gap={2} vAlign="center" wrap="wrap">
-      <Stack direction="horizontal" gap={1} wrap="wrap" role="group" aria-label="Ranking mode">
+      <Stack direction="horizontal" gap={1} wrap="wrap" vAlign="center" role="group" aria-label="Ranking mode">
         {MODES.map((mode) => (
           <Button
             key={mode}
@@ -37,6 +45,25 @@ export function FilterBar({ filters, onChange, tags }: FilterBarProps) {
             onClick={() => onChange({ ...filters, mode })}
           />
         ))}
+        {/*
+          What the active lens means, one hover/focus away — replaces the intro
+          notice that used to sit across the top and linger when the mode changed.
+        */}
+        <HoverCard
+          placement="below"
+          content={
+            <div {...stylex.props(styles.hint)}>
+              <Text type="body">{MODE_DESCRIPTIONS[filters.mode]}</Text>
+            </div>
+          }
+        >
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={`What ${MODE_LABELS[filters.mode]} means`}
+            icon={<Icon icon="info" />}
+          />
+        </HoverCard>
       </Stack>
 
       <FiltersSheet filters={filters} onChange={onChange} tags={tags} />

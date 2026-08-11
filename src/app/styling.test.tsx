@@ -109,6 +109,35 @@ describe('no reachable route renders retired stylesheet chrome (R15)', () => {
     expect(rendersThroughDesignSystem()).toBe(true);
   });
 
+  it('the ranking converts its own layout to StyleX and authors no inline style (R8, U8)', async () => {
+    serve(
+      corpus({
+        games: [
+          game({
+            id: 'steam:1',
+            name: 'Signal Drift',
+            evidence: [evidence({ community: 'r/patientgamers', window: 'week' })],
+          }),
+        ],
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('button', { name: /Signal Drift/i });
+
+    // The ranked list is our element — it must carry no inline style attribute.
+    const list = document.querySelector('ol');
+    expect(list).not.toBeNull();
+    expect(list).not.toHaveAttribute('style');
+
+    // The evidence-strength meter's wrapper is also ours; the Astryx ProgressBar
+    // inside it legitimately keeps its own inline style for the dynamic width, so
+    // we assert on the wrapper we authored, not on the whole subtree.
+    const meter = document.querySelector('[role="progressbar"]');
+    expect(meter).not.toBeNull();
+    expect(meter?.parentElement).not.toHaveAttribute('style');
+  });
+
   it('the load-time states — loading, empty, offline — are class-clean and themed', async () => {
     // Loading renders before the fetch resolves, so assert synchronously.
     serve(corpus({ games: [game({ id: 'steam:1', name: 'Signal Drift' })] }));

@@ -1,10 +1,63 @@
+import { useState } from 'react';
 import { Badge, Button, Heading, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { DECK_LABELS, ownerBandLabel, platformLabel, sourceLabel, storeLabel } from '../labels.js';
 import { ExternalLink } from './ExternalLink.js';
+import { steamHeaderImage } from './steamImage.js';
 import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
 
 /** How many community tags a detail panel shows before it stops being scannable. */
 const MAX_TAGS = 8;
+
+const styles = stylex.create({
+  /** Reserves the hero's box so nothing shifts as it loads or fails. */
+  heroFrame: {
+    width: '100%',
+    aspectRatio: '460 / 215',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  /** Shown in the same reserved frame when the image 404s or is blocked. */
+  heroPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+});
+
+/**
+ * The Steam store header, in a fixed frame that never collapses. Steam is the
+ * only store in the corpus and every hero rides on one CDN URL, so the real risk
+ * is a blocked or 404 image (or a CDN-host migration) — `onError` swaps to a
+ * quiet placeholder in the same reserved box rather than leaving a broken image
+ * or a layout jump. Decorative (`alt=""`): the section is already labelled with
+ * the game's name. Referrer withheld so the CDN learns nothing about the reader.
+ */
+function Hero({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div {...stylex.props(styles.heroFrame)} aria-label={`${name} store image`}>
+      {failed ? (
+        <div {...stylex.props(styles.heroPlaceholder)} aria-hidden="true" />
+      ) : (
+        <img
+          {...stylex.props(styles.heroImage)}
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          fetchPriority="high"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
+  );
+}
 
 export interface GameDetailProps {
   game: GameEntry;
@@ -69,45 +122,61 @@ export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
   // The primary store link is already on the entry itself, one tap away from
   // the list; repeating it here would only pad the panel.
   const alsoOn = game.storeLinks.slice(1);
+  const heroSrc = steamHeaderImage(game.storeLinks);
+  // The availability block carries anything about where and how to play it.
+  const hasAvailability =
+    game.platforms.length > 0 ||
+    Boolean(owners) ||
+    Boolean(deck) ||
+    alsoOn.length > 0 ||
+    game.storeLinks.length === 0;
 
   return (
     <section aria-label={game.name}>
       <Stack direction="vertical" gap={3}>
-        <Stack direction="horizontal" gap={1} wrap="wrap" vAlign="center">
-          {game.platforms.map((platform) => (
-            <Badge key={platform} label={platformLabel(platform)} />
-          ))}
-          {owners && <Badge variant="neutral" label={owners} />}
-          {deck && <Badge variant="neutral" label={deck} />}
-        </Stack>
+        <Heading level={2}>{game.name}</Heading>
 
-        {tags.length > 0 && (
-          <Stack
-            direction="horizontal"
-            gap={1}
-            wrap="wrap"
-            aria-label={`Community tags for ${game.name}`}
-          >
-            {tags.map((tag) => (
-              <Badge key={tag} variant="neutral" label={tag} />
-            ))}
+        {/* Key on the src so the failed-load state can never outlive its image. */}
+        {heroSrc && <Hero key={heroSrc} src={heroSrc} name={game.name} />}
+
+        {hasAvailability && (
+          <Stack direction="vertical" gap={1}>
+            <Heading level={3}>Availability</Heading>
+            <Stack direction="horizontal" gap={1} wrap="wrap" vAlign="center">
+              {game.platforms.map((platform) => (
+                <Badge key={platform} label={platformLabel(platform)} />
+              ))}
+              {owners && <Badge variant="neutral" label={owners} />}
+              {deck && <Badge variant="neutral" label={deck} />}
+            </Stack>
+
+            {game.storeLinks.length === 0 && (
+              <Text type="supporting">
+                No store link resolved for this one — the discussions below are still the way in.
+              </Text>
+            )}
+
+            {alsoOn.length > 0 && (
+              <Stack direction="horizontal" gap={2} wrap="wrap" vAlign="center">
+                <Text type="supporting">Also on</Text>
+                {alsoOn.map((link) => (
+                  <ExternalLink href={link.url} key={link.url}>
+                    {storeLabel(link.store)}
+                  </ExternalLink>
+                ))}
+              </Stack>
+            )}
           </Stack>
         )}
 
-        {game.storeLinks.length === 0 && (
-          <Text type="supporting">
-            No store link resolved for this one — the discussions below are still the way in.
-          </Text>
-        )}
-
-        {alsoOn.length > 0 && (
-          <Stack direction="horizontal" gap={2} wrap="wrap" vAlign="center">
-            <Text type="supporting">Also on</Text>
-            {alsoOn.map((link) => (
-              <ExternalLink href={link.url} key={link.url}>
-                {storeLabel(link.store)} ↗
-              </ExternalLink>
-            ))}
+        {tags.length > 0 && (
+          <Stack direction="vertical" gap={1}>
+            <Heading level={3}>Community tags</Heading>
+            <Stack direction="horizontal" gap={1} wrap="wrap">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="neutral" label={tag} />
+              ))}
+            </Stack>
           </Stack>
         )}
 

@@ -36,6 +36,9 @@ const styles = stylex.create({
     maxWidth: '46rem',
     marginInline: 'auto',
     paddingInline: '1rem',
+    // Give the masthead room from the viewport top; on a notched device clear
+    // the status bar instead of tucking under it.
+    paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
     paddingBottom: 'env(safe-area-inset-bottom)',
   },
 });
@@ -264,85 +267,52 @@ export function App() {
     );
   }
 
-  // Every active status collapses into one expandable line (R6). The offline
-  // and failed-source states stand on their own; the intro, momentum and
-  // relaxed-timeframe states only apply once there is a ranking to explain.
+  // Active statuses render as visible themed Banners (R6). The offline and
+  // failed-source states stand on their own; the momentum and relaxed-timeframe
+  // states only apply once there is a ranking to explain.
   const hasRanking = loadedCorpus.games.length > 0;
   const statuses: StatusItem[] = [];
 
   if (origin === 'cache' || !online) {
     statuses.push({
       key: 'offline',
-      content: (
-        <Text type="body">
-          <strong>Showing the last ranking you loaded.</strong> You are offline, so this may be
-          behind what communities are discussing now.
-        </Text>
-      ),
+      tone: 'warning',
+      title: 'Showing the last ranking you loaded.',
+      description: 'You are offline, so this may be behind what communities are discussing now.',
     });
   }
 
   if (failedSources.length > 0) {
     statuses.push({
       key: 'failed',
-      content: (
-        <Text type="body">
-          <strong>
-            {failedSources.map((source) => sourceLabel(source.source)).join(', ')} did not respond
-            during the last update.
-          </strong>{' '}
-          The ranking is built from the sources that did, so it is thinner than usual.
-        </Text>
-      ),
-    });
-  }
-
-  if (hasRanking && !reader.introSeen) {
-    statuses.push({
-      key: 'intro',
-      content: (
-        <Stack direction="vertical" gap={1} hAlign="start">
-          <Text type="body">
-            <strong>This is Hidden gems.</strong> Ranked by how much communities are discussing a
-            game, then pushed down for how many people already own it. Open an entry to see the
-            threads behind it.
-          </Text>
-          <Button
-            variant="ghost"
-            size="sm"
-            label="Got it"
-            onClick={() => setReader((current) => ({ ...current, introSeen: true }))}
-          />
-        </Stack>
-      ),
+      tone: 'warning',
+      title: `${failedSources
+        .map((source) => sourceLabel(source.source))
+        .join(', ')} did not respond during the last update.`,
+      description: 'The ranking is built from the sources that did, so it is thinner than usual.',
     });
   }
 
   if (hasRanking && !momentumAvailable(loadedCorpus.games, reader.filters.mode)) {
     statuses.push({
       key: 'momentum',
+      tone: 'info',
       live: true,
-      content: (
-        <Text type="body">
-          <strong>{MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.</strong>{' '}
-          The last update did not cover the recent window this mode needs, so these are ranked
-          without any sense of momentum.
-        </Text>
-      ),
+      title: `${MODE_LABELS[reader.filters.mode]} has nothing recent to compare against.`,
+      description:
+        'The last update did not cover the recent window this mode needs, so these are ranked without any sense of momentum.',
     });
   }
 
   if (hasRanking && result.relaxedFrom) {
     statuses.push({
       key: 'relaxed',
+      tone: 'info',
       live: true,
-      content: (
-        <Text type="body">
-          <strong>Not much matched in the {WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.</strong>{' '}
-          Widened the timeframe to the {WINDOW_LABELS[result.window].toLowerCase()} — every other
-          filter is untouched.
-        </Text>
-      ),
+      title: `Not much matched in the ${WINDOW_LABELS[result.relaxedFrom].toLowerCase()}.`,
+      description: `Widened the timeframe to the ${WINDOW_LABELS[
+        result.window
+      ].toLowerCase()} — every other filter is untouched.`,
     });
   }
 
@@ -370,7 +340,7 @@ export function App() {
           description="The last update finished without finding enough discussion to rank. The next scheduled run will try again."
         />
       ) : (
-        <>
+        <Stack direction="vertical" gap={4}>
           <FilterBar filters={reader.filters} onChange={setFilters} tags={tags} />
 
           {result.exhausted ? (
@@ -383,7 +353,7 @@ export function App() {
           ) : (
             <Ranking ranked={result.ranked} onDismiss={dismissGame} />
           )}
-        </>
+        </Stack>
       )}
     </div>
   );

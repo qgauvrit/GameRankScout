@@ -1,10 +1,40 @@
 import { useState } from 'react';
-import { ClickableCard, EmptyState, ProgressBar, Stack, Text } from '@astryxdesign/core';
+import { ClickableCard, EmptyState, HoverCard, ProgressBar, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { EvidenceSheet } from './EvidenceSheet.js';
 import { ExternalLink } from './ExternalLink.js';
 import { storeLabel } from '../labels.js';
 import { MAX_MAGNITUDE } from '../../ranking/magnitude.js';
 import type { RankedGame } from '../../ranking/score.js';
+
+/**
+ * Layout styling lives in StyleX rather than inline `style` attributes so the
+ * app authors no inline styles of its own — keeping the `public/_headers` CSP
+ * comment ("no inline style attributes") honest and the styling consistent with
+ * the rest of the app (see the plan's KTD6). Note the Astryx `ProgressBar` still
+ * emits its own inline `style` for the dynamic fill width; that is the design
+ * system's, not ours.
+ */
+const styles = stylex.create({
+  /** The fixed-width column the evidence-strength meter sits in. */
+  strengthMeter: {
+    width: 72,
+    flexShrink: 0,
+  },
+  /** The ranked list: a plain flex column with no list chrome. */
+  list: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  /** Keeps a hover explanation to a readable measure rather than a full-width line. */
+  hint: {
+    maxWidth: '18rem',
+  },
+});
 
 export interface RankingProps {
   ranked: RankedGame[];
@@ -51,6 +81,7 @@ function Entry({
 }) {
   const { game } = entry;
   const primaryStore = game.storeLinks[0];
+  const strength = strengthPercent(entry);
 
   return (
     <li>
@@ -65,16 +96,28 @@ function Entry({
           </Stack>
 
           <Stack direction="horizontal" gap={3} vAlign="center">
-            <div style={{ width: 72, flexShrink: 0 }}>
-              <ProgressBar
-                value={strengthPercent(entry)}
-                max={100}
-                label={`Evidence strength for ${game.name}`}
-                isLabelHidden
-              />
-            </div>
+            <HoverCard
+              placement="above"
+              content={
+                <div {...stylex.props(styles.hint)}>
+                  <Text type="supporting">
+                    Evidence strength {strength}% — how much this game is being discussed across
+                    communities and time windows, relative to the strongest entry.
+                  </Text>
+                </div>
+              }
+            >
+              <div {...stylex.props(styles.strengthMeter)}>
+                <ProgressBar
+                  value={strength}
+                  max={100}
+                  label={`Evidence strength for ${game.name}`}
+                  isLabelHidden
+                />
+              </div>
+            </HoverCard>
             {primaryStore && (
-              <ExternalLink href={primaryStore.url}>{storeLabel(primaryStore.store)} ↗</ExternalLink>
+              <ExternalLink href={primaryStore.url}>{storeLabel(primaryStore.store)}</ExternalLink>
             )}
           </Stack>
         </Stack>
@@ -106,7 +149,7 @@ export function Ranking({ ranked, onDismiss }: RankingProps) {
 
   return (
     <>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <ol {...stylex.props(styles.list)}>
         {ranked.map((entry, index) => (
           <Entry entry={entry} key={entry.game.id} position={index + 1} onOpen={setOpenId} />
         ))}

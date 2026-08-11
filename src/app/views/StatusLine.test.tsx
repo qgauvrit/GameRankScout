@@ -88,4 +88,20 @@ describe('StatusLine', () => {
     await user.click(screen.getByRole('button', { name: /show 1 more/i }));
     expect(screen.getByText('Info three')).toBeInTheDocument();
   });
+
+  it('never collapses a live notice, even past the visible limit', () => {
+    // The real degraded-load set: two warnings plus two live info notices.
+    const many: StatusItem[] = [
+      { key: 'offline', tone: 'warning', title: 'Offline copy' },
+      { key: 'failed', tone: 'warning', title: 'Failed copy' },
+      { key: 'momentum', tone: 'info', live: true, title: 'Momentum copy' },
+      { key: 'relaxed', tone: 'info', live: true, title: 'Relaxed copy' },
+    ];
+    render(<StatusLine statuses={many} />);
+
+    // All four stay on the surface — nothing collapsible, so no "show more".
+    expect(screen.getByText('Relaxed copy').closest('[role="status"]')).not.toBeNull();
+    expect(screen.getByText('Momentum copy')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
+  });
 });

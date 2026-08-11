@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Icon, Link } from '@astryxdesign/core';
+import { Icon, Link, VisuallyHidden } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 
 const styles = stylex.create({
@@ -22,18 +22,6 @@ const styles = stylex.create({
     },
     transitionProperty: 'opacity, transform',
     transitionDuration: '120ms',
-  },
-  /** Announced to assistive tech, invisible on screen (supplements the name). */
-  srOnly: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    padding: 0,
-    margin: -1,
-    overflow: 'hidden',
-    clip: 'rect(0, 0, 0, 0)',
-    whiteSpace: 'nowrap',
-    borderWidth: 0,
   },
 });
 
@@ -67,7 +55,7 @@ export function ExternalLink({
         <span {...stylex.props(styles.icon)}>
           <Icon icon="externalLink" size="sm" />
         </span>
-        <span {...stylex.props(styles.srOnly)}>(opens in a new tab)</span>
+        <VisuallyHidden>(opens in a new tab)</VisuallyHidden>
       </span>
     </Link>
   );

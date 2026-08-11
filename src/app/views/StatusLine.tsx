@@ -44,18 +44,25 @@ function NoticeBanner({ status }: { status: StatusItem }) {
  * Notices used to hide behind a grey collapsible trigger — densest on a cold
  * open, exactly when the reader most needs to see them. Here each is an Astryx
  * `Banner` tinted by its tone, stacked and visible by default. When more than
- * {@link VISIBLE_LIMIT} are active they are sorted warnings-first and the
- * lower-severity remainder collapses behind one control, so a warning is never
- * the notice that gets hidden. Nothing renders when nothing is active.
+ * {@link VISIBLE_LIMIT} are active, only the lowest-priority overflow collapses
+ * behind one control: a warning or a `live` notice is never hidden — a warning
+ * is always worth seeing, and a live notice must stay in the DOM to announce
+ * (`role="status"`). Nothing renders when nothing is active.
  */
 export function StatusLine({ statuses }: { statuses: StatusItem[] }) {
   const [expanded, setExpanded] = useState(false);
   if (statuses.length === 0) return null;
 
   const ordered = bySeverity(statuses);
-  const overflowing = ordered.length > VISIBLE_LIMIT && !expanded;
-  const shown = overflowing ? ordered.slice(0, VISIBLE_LIMIT) : ordered;
-  const hiddenCount = ordered.length - shown.length;
+  // Only quiet, non-live info notices are ever collapsible.
+  const collapsibleKeys = ordered.filter((s) => s.tone !== 'warning' && !s.live).map((s) => s.key);
+  const overflow = Math.min(Math.max(0, ordered.length - VISIBLE_LIMIT), collapsibleKeys.length);
+  // Hide the lowest-priority collapsible notices (they sort last), if overflowing.
+  const hiddenKeys = new Set(
+    expanded || overflow === 0 ? [] : collapsibleKeys.slice(collapsibleKeys.length - overflow),
+  );
+  const shown = ordered.filter((s) => !hiddenKeys.has(s.key));
+  const hiddenCount = hiddenKeys.size;
 
   return (
     <Stack direction="vertical" gap={2}>

@@ -267,9 +267,9 @@ export function App() {
     );
   }
 
-  // Every active status collapses into one expandable line (R6). The offline
-  // and failed-source states stand on their own; the intro, momentum and
-  // relaxed-timeframe states only apply once there is a ranking to explain.
+  // Active statuses render as visible themed Banners (R6). The offline and
+  // failed-source states stand on their own; the momentum and relaxed-timeframe
+  // states only apply once there is a ranking to explain.
   const hasRanking = loadedCorpus.games.length > 0;
   const statuses: StatusItem[] = [];
 

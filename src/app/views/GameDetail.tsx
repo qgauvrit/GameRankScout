@@ -136,7 +136,8 @@ export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
       <Stack direction="vertical" gap={3}>
         <Heading level={2}>{game.name}</Heading>
 
-        {heroSrc && <Hero src={heroSrc} name={game.name} />}
+        {/* Key on the src so the failed-load state can never outlive its image. */}
+        {heroSrc && <Hero key={heroSrc} src={heroSrc} name={game.name} />}
 
         {hasAvailability && (
           <Stack direction="vertical" gap={1}>

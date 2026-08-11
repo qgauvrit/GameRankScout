@@ -77,10 +77,11 @@ describe('GameDetail section headings (U7)', () => {
     renderDetail(entry);
     const detail = within(screen.getByRole('region', { name: /Signal Drift/i }));
 
-    expect(detail.getByRole('heading', { name: 'Signal Drift' })).toBeInTheDocument();
-    expect(detail.getByRole('heading', { name: /availability/i })).toBeInTheDocument();
-    expect(detail.getByRole('heading', { name: /community tags/i })).toBeInTheDocument();
-    expect(detail.getByRole('heading', { name: /why it ranked/i })).toBeInTheDocument();
+    // Levels are pinned (h2 title -> h3 sections) so a level skip is caught.
+    expect(detail.getByRole('heading', { level: 2, name: 'Signal Drift' })).toBeInTheDocument();
+    expect(detail.getByRole('heading', { level: 3, name: /availability/i })).toBeInTheDocument();
+    expect(detail.getByRole('heading', { level: 3, name: /community tags/i })).toBeInTheDocument();
+    expect(detail.getByRole('heading', { level: 3, name: /why it ranked/i })).toBeInTheDocument();
   });
 
   it('omits the Community tags heading when there are no tags', () => {
@@ -88,5 +89,21 @@ describe('GameDetail section headings (U7)', () => {
     renderDetail(entry);
     const detail = within(screen.getByRole('region', { name: /Signal Drift/i }));
     expect(detail.queryByRole('heading', { name: /community tags/i })).toBeNull();
+  });
+
+  it('omits the Availability heading when there is nothing to say about availability', () => {
+    // A single Steam link (so alsoOn is empty and storeLinks is non-empty), no
+    // platforms, owner band, or deck rating: the whole availability block drops.
+    const entry = game({
+      id: 'steam:1',
+      name: 'Signal Drift',
+      platforms: [],
+      ownerBand: null,
+      handheld: null,
+      storeLinks: [{ store: 'steam', url: 'https://store.steampowered.com/app/1/' }],
+    });
+    renderDetail(entry);
+    const detail = within(screen.getByRole('region', { name: /Signal Drift/i }));
+    expect(detail.queryByRole('heading', { name: /availability/i })).toBeNull();
   });
 });

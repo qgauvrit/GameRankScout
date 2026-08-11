@@ -35,8 +35,8 @@ import { resolve } from 'node:path';
 /** Deploy propagation is not instantaneous; a check that runs immediately can
  * read the previous version. Failing a good deploy would record a false publish
  * failure, so each check gets a few attempts before it counts. */
-const ATTEMPTS = 5;
-const BACKOFF_MS = 3_000;
+const ATTEMPTS = 8;
+const BACKOFF_MS = 4_000;
 /** A hung origin would otherwise stall the publish job until its 20-minute cap. */
 const TIMEOUT_MS = 10_000;
 

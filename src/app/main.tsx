@@ -3,7 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { Theme } from '@astryxdesign/core/theme';
 import { App } from './App.js';
-import { grsTheme } from './theme.js';
+// The theme is consumed pre-built (`__built: true`), not as the runtime
+// `defineTheme` object from ./theme.ts. A built theme ships its tokens and
+// component overrides as a static CSS file imported here, so `<Theme>` skips
+// its runtime `<style>` injection — the injection the deploy CSP (style-src
+// 'self', see public/_headers) blocks. ./theme.ts stays the human-authored
+// source; `npm run build:theme` regenerates this pair from it.
+import { grsTheme } from './theme.generated/grs.js';
+import './theme.generated/grs.css';
 import './fonts.js';
 
 const root = document.getElementById('root');

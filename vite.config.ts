@@ -1,15 +1,44 @@
 import { defineConfig } from 'vitest/config';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { astryxStylex } from '@astryxdesign/build/vite';
 
+// Astryx compiles through StyleX at build time. This runs for both `vite build`
+// and the vitest suite (they share this config), so component styles are
+// transformed the same way in production and in tests (R4).
+//
+// Astryx's own `astryx-css-layer-order` plugin declares the StyleX cascade-layer
+// order by injecting an inline <style> into index.html — which the deploy CSP
+// (style-src 'self', see public/_headers) blocks, leaving components mis-layered.
+// It is dropped here and replaced by `astryxLayerOrderLink` below, which points
+// at public/astryx-layers.css instead: same declaration, same guaranteed-first
+// position, but an external stylesheet served from this origin — no inline style.
+const astryxPlugins = astryxStylex().filter(
+  (plugin) => !plugin || (plugin as Plugin).name !== 'astryx-css-layer-order',
+);
+
+// Head-prepends <link rel="stylesheet" href="/astryx-layers.css"> so the layer
+// order is the first thing the document parses, before any @layer block in the
+// bundled CSS. Mirrors the replaced plugin's `transformIndexHtml`.
+const astryxLayerOrderLink: Plugin = {
+  name: 'astryx-css-layer-order-link',
+  transformIndexHtml() {
+    return [
+      {
+        tag: 'link',
+        attrs: { rel: 'stylesheet', href: '/astryx-layers.css' },
+        injectTo: 'head-prepend',
+      },
+    ];
+  },
+};
+
 export default defineConfig({
   plugins: [
     react(),
-    // Astryx compiles through StyleX at build time. This plugin runs for both
-    // `vite build` and the vitest suite (they share this config), so component
-    // styles are transformed the same way in production and in tests (R4).
-    astryxStylex(),
+    ...astryxPlugins,
+    astryxLayerOrderLink,
     VitePWA({
       registerType: 'autoUpdate',
       // The manifest is authored by hand in public/ so it stays reviewable.

@@ -1,0 +1,19 @@
+/*
+ * Cascade-layer order for the Astryx/StyleX styles.
+ *
+ * @astryxdesign/build's vite plugin normally declares this by injecting an
+ * inline <style> into index.html — which the deploy CSP (style-src 'self', see
+ * public/_headers) blocks. That plugin's injection is filtered out in
+ * vite.config.ts and replaced with a <link> to this file, head-prepended so it
+ * is the first stylesheet the document parses: layer order is set here, before
+ * any @layer block in the bundled CSS is encountered, regardless of how the
+ * bundler orders those blocks.
+ *
+ * Served verbatim from public/ (this origin), so it satisfies style-src 'self'
+ * with no inline style at all. The names and order mirror the plugin's default
+ * (reset < astryx-base < astryx-theme < product): later layers win, so the
+ * theme's component overrides (astryx-theme) beat the library base (astryx-base),
+ * and product styles beat everything. Keep in sync with @astryxdesign/build's
+ * defaults; a drift shows up immediately as unstyled/mis-layered components.
+ */
+@layer reset, astryx-base, astryx-theme, product;

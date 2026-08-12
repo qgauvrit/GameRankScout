@@ -9,12 +9,18 @@
 # origin. React's escaping and the http(s)-only URL constraint in
 # `src/corpus/schema.ts` are the primary defences; this is the layer under them.
 #
-# `style-src` carries no 'unsafe-inline'. The app authors no inline `style`
-# attributes and no `<style>` elements — every app rule comes from StyleX. (React
-# applies component styles via the CSSOM, which `style-src` does not govern, so a
-# design-system component that sets a dynamic inline style is unaffected.) This is
-# verified by loading the built site under this exact policy and watching for
-# violations, not by reading the source.
+# `style-src` carries no 'unsafe-inline'. Every app rule reaches the page as a
+# static stylesheet served from this origin. Astryx defaults to two inline
+# <style> injections this policy would block, and the build routes around both:
+#   - The theme. `<Theme>` injects an unbuilt `defineTheme` theme's tokens as a
+#     runtime <style>. The theme is instead consumed pre-built
+#     (`src/app/theme.generated/`, from `npm run build:theme`): a built theme
+#     ships its CSS as a file, so `<Theme>` skips injection.
+#   - The StyleX cascade-layer order. @astryxdesign/build injects it as an inline
+#     <style> in index.html; vite.config.ts drops that and serves the same
+#     declaration from public/astryx-layers.css instead.
+# This is verified by loading the built site under this exact policy and watching
+# for violations, not by reading the source.
 #
 # `img-src` allows exactly one third-party host, `cdn.cloudflare.steamstatic.com`,
 # for game hero images (the Steam store header derived from an entry's Steam

@@ -1,14 +1,14 @@
 {
-  "startedAt": "2026-08-15T05:38:25.730Z",
-  "finishedAt": "2026-08-15T07:55:09.656Z",
+  "startedAt": "2026-08-16T05:40:30.156Z",
+  "finishedAt": "2026-08-16T07:55:46.538Z",
   "ok": true,
   "sources": [
     {
       "source": "reddit",
       "ok": true,
-      "evidenceCount": 6963,
+      "evidenceCount": 6915,
       "communitiesCovered": 34,
-      "rejections": 0,
+      "rejections": 1,
       "error": null
     },
     {
@@ -28,8 +28,8 @@
       "error": null
     }
   ],
-  "games": 1047,
-  "evidence": 7059,
-  "corpusBytes": 3495739,
-  "publish": "published"
+  "games": 1041,
+  "evidence": 7011,
+  "corpusBytes": 3470340,
+  "publish": "not_attempted"
 }

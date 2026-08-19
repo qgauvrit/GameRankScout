@@ -9,6 +9,16 @@ const styles = stylex.create({
     alignItems: 'center',
     gap: '0.2em',
   },
+  /**
+   * A 44px-high interactive area for standalone links (KTD2) — the thread
+   * citations a reader taps on a phone. It grows the anchor's hit box, not the
+   * text: the link keeps its type and weight and does not read as a button.
+   */
+  standaloneHit: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minBlockSize: 44,
+  },
   /** The external-link glyph: quietly present, emphasized on hover. */
   icon: {
     display: 'inline-flex',
@@ -49,7 +59,13 @@ export function ExternalLink({
   isStandalone?: boolean;
 }) {
   return (
-    <Link href={href} target="_blank" rel="noreferrer noopener" isStandalone={isStandalone}>
+    <Link
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      isStandalone={isStandalone}
+      xstyle={isStandalone ? styles.standaloneHit : undefined}
+    >
       <span {...stylex.props(styles.content)}>
         {children}
         <span {...stylex.props(styles.icon)}>

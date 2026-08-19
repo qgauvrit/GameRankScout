@@ -41,6 +41,13 @@ const styles = stylex.create({
     paddingTop: 'max(1.5rem, env(safe-area-inset-top))',
     paddingBottom: 'env(safe-area-inset-bottom)',
   },
+  // A 44px square hit area for the icon-only Settings control, applied locally
+  // via `xstyle` so only this touch-first control grows rather than every
+  // IconButton in the app (KTD2). The design system renders these at 32px.
+  touchTargetSquare: {
+    minBlockSize: 44,
+    minInlineSize: 44,
+  },
 });
 
 type LoadState =
@@ -326,6 +333,7 @@ export function App() {
             label="Settings"
             variant="ghost"
             icon={<span aria-hidden="true">☰</span>}
+            xstyle={styles.touchTargetSquare}
             onClick={() => setShowSettings(true)}
           />
         </Stack>

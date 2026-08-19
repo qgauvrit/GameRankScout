@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Button, CheckboxInput, Heading, Stack, Text, TextInput } from '@astryxdesign/core';
+import {
+  Button,
+  CheckboxInput,
+  Collapsible,
+  Heading,
+  Stack,
+  Text,
+  TextInput,
+} from '@astryxdesign/core';
 import { CURATED_COMMUNITIES, RECOMMENDED_COMMUNITIES } from '../../communities/catalogue.js';
 import { parseCommunityInput } from '../state/local.js';
 import { sourceLabel } from '../labels.js';
@@ -107,6 +115,14 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
       disabledCommunities: state.disabledCommunities.filter((entry) => entry !== id),
     });
 
+  // Recommendations the reader has actually switched on — the count the
+  // disclosure advertises, and what decides whether it opens already (KTD4).
+  const recommendedSelected = RECOMMENDED_COMMUNITIES.filter(
+    (community) =>
+      state.enabledRecommended.includes(community.id) &&
+      !state.disabledCommunities.includes(community.id),
+  ).length;
+
   const add = () => {
     const parsed = parseCommunityInput(draft);
     if (!parsed) {
@@ -147,21 +163,31 @@ export function Communities({ state, onChange, covered, adhoc, onPull }: Communi
           ))}
         </Stack>
 
-        <Stack direction="vertical" gap={2}>
-          <Heading level={4}>Also recommended</Heading>
-          {RECOMMENDED_COMMUNITIES.map((community) => (
-            <Row
-              key={community.id}
-              community={community}
-              checked={
-                state.enabledRecommended.includes(community.id) &&
-                !state.disabledCommunities.includes(community.id)
-              }
-              note={covered(community.id) ? '' : NOT_YET_SWEPT}
-              onToggle={() => toggleRecommended(community.id)}
-            />
-          ))}
-        </Stack>
+        {/*
+          The recommended catalogue is optional and off by default, so it starts
+          collapsed to keep the reader's current choices in view — but opens
+          already when some are enabled, so those choices stay discoverable
+          (KTD4). Collapsible's trigger is a real button with aria-expanded.
+        */}
+        <Collapsible
+          trigger={`Recommended communities (${recommendedSelected} selected)`}
+          defaultIsOpen={recommendedSelected > 0}
+        >
+          <Stack direction="vertical" gap={2}>
+            {RECOMMENDED_COMMUNITIES.map((community) => (
+              <Row
+                key={community.id}
+                community={community}
+                checked={
+                  state.enabledRecommended.includes(community.id) &&
+                  !state.disabledCommunities.includes(community.id)
+                }
+                note={covered(community.id) ? '' : NOT_YET_SWEPT}
+                onToggle={() => toggleRecommended(community.id)}
+              />
+            ))}
+          </Stack>
+        </Collapsible>
 
         {state.addedCommunities.length > 0 && (
           <Stack direction="vertical" gap={2}>

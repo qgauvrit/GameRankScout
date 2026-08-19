@@ -25,6 +25,15 @@ function entryFor(name: string) {
   return screen.getByRole('button', { name: new RegExp(name, 'i') });
 }
 
+/** A ranked list of `count` distinct games, for exercising the reveal control. */
+function manyRanked(count: number) {
+  return rank(
+    Array.from({ length: count }, (_, index) =>
+      game({ id: `steam:${index + 1}`, name: `Game ${index + 1}` }),
+    ),
+  );
+}
+
 describe('ranking view', () => {
   it('renders every ranked game in order, with its position', () => {
     const ranked = rank([
@@ -253,6 +262,16 @@ describe('ranking view', () => {
     );
   });
 
+  it('shows each row’s evidence strength as a visible percentage (R5)', () => {
+    const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
+    renderRanking(ranked);
+
+    // The number the reader sees matches the meter, without needing hover.
+    const bar = screen.getByRole('progressbar', { name: /Signal Drift/i });
+    const percent = Number(bar.getAttribute('aria-valuenow'));
+    expect(screen.getByText(`${percent}% evidence`)).toBeInTheDocument();
+  });
+
   it('offers to dismiss a game from its own evidence panel', async () => {
     const user = userEvent.setup();
     const ranked = rank([game({ id: 'steam:1', name: 'Signal Drift' })]);
@@ -283,6 +302,68 @@ describe('ranking view', () => {
 
     expect(screen.getByRole('region', { name: /Signal Drift/i })).toBeTruthy();
     expect(screen.queryByRole('region', { name: /Broadcast Storm/i })).toBeNull();
+  });
+
+  it('bounds the initial list to one page and reveals the rest on demand (U2)', async () => {
+    const user = userEvent.setup();
+    renderRanking(manyRanked(26));
+
+    // First page only, with a control that reveals exactly what remains.
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    expect(screen.getByText('25 of 26 games shown')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 more' }));
+
+    // The whole list, in unbroken ordinal order, with the control gone.
+    const entries = screen.getAllByRole('listitem');
+    expect(entries).toHaveLength(26);
+    expect(entries[25]!).toHaveTextContent('26');
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
+  });
+
+  it('reveals in equal pages when the list divides evenly (U2)', async () => {
+    const user = userEvent.setup();
+    renderRanking(manyRanked(50));
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    await user.click(screen.getByRole('button', { name: 'Show 25 more' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(50);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
+  });
+
+  it('shows no reveal control when a single page holds everything (U2)', () => {
+    renderRanking(manyRanked(25));
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
+    expect(screen.queryByText(/games shown/i)).toBeNull();
+  });
+
+  it('resets to the first page when the ranked input changes (U2)', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderRanking(manyRanked(30));
+
+    await user.click(screen.getByRole('button', { name: 'Show 5 more' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(30);
+
+    // A new ranked result (a filter or mode change) starts the reveal over.
+    rerender(<Ranking ranked={manyRanked(40)} onDismiss={vi.fn()} />);
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    expect(screen.getByText('25 of 40 games shown')).toBeInTheDocument();
+  });
+
+  it('keeps the revealed list intact when a detail sheet opens (U2)', async () => {
+    const user = userEvent.setup();
+    renderRanking(manyRanked(26));
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 more' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(26);
+
+    // Opening an entry must not collapse the list back to the first page.
+    // "Game 26" is unambiguous where "Game 1" would also match Game 10–19.
+    await user.click(entryFor('Game 26'));
+    expect(screen.getByRole('region', { name: /Game 26/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(26);
   });
 
   it('shows the metadata filtering is built on', async () => {

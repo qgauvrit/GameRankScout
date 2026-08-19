@@ -1,11 +1,34 @@
 import { useState } from 'react';
 import { Button, Dialog, Heading, Stack, Text } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { PLATFORMS, RANKING_WINDOWS } from '../../corpus/schema.js';
 import { WINDOW_LABELS, platformLabel } from '../labels.js';
 import { ANY, TOP_LEVEL_GENRES } from './genres.js';
 import { DEFAULT_FILTERS } from './apply.js';
 import type { Filters } from './apply.js';
 import type { Platform, RankingWindow } from '../../corpus/schema.js';
+
+const styles = stylex.create({
+  // A 44px touch target for the native selects (KTD2): the OS picker still opens
+  // on tap, but the control the reader aims at is now full-width and tall enough
+  // to hit on a phone. `block` so the select sits under its label.
+  select: {
+    display: 'block',
+    inlineSize: '100%',
+    minBlockSize: 44,
+  },
+  /** 44px minimum block for the touch-first Filters trigger and Done action. */
+  touchTarget: {
+    minBlockSize: 44,
+  },
+  /** Gives the handheld checkbox row a 44px hit area without restyling the box. */
+  checkboxRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    minBlockSize: 44,
+  },
+});
 
 export interface FiltersSheetProps {
   filters: Filters;
@@ -50,6 +73,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
       <Button
         variant="secondary"
         label={count > 0 ? `Filters (${count})` : 'Filters'}
+        xstyle={styles.touchTarget}
         onClick={() => setIsOpen(true)}
       />
 
@@ -66,6 +90,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
           <label>
             <Text type="label">Timeframe</Text>
             <select
+              {...stylex.props(styles.select)}
               value={filters.window}
               onChange={(event) => set({ window: event.target.value as RankingWindow })}
             >
@@ -80,6 +105,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
           <label>
             <Text type="label">Platform</Text>
             <select
+              {...stylex.props(styles.select)}
               value={filters.platform}
               onChange={(event) => {
                 const platform = event.target.value as Platform | typeof ANY;
@@ -99,7 +125,11 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
 
           <label>
             <Text type="label">Genre</Text>
-            <select value={filters.genre} onChange={(event) => set({ genre: event.target.value })}>
+            <select
+              {...stylex.props(styles.select)}
+              value={filters.genre}
+              onChange={(event) => set({ genre: event.target.value })}
+            >
               <option value={ANY}>Any genre</option>
               {TOP_LEVEL_GENRES.map((genre) => (
                 <option value={genre.id} key={genre.id}>
@@ -112,7 +142,11 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
           {tags.length > 0 && (
             <label>
               <Text type="label">Tag</Text>
-              <select value={filters.tag} onChange={(event) => set({ tag: event.target.value })}>
+              <select
+                {...stylex.props(styles.select)}
+                value={filters.tag}
+                onChange={(event) => set({ tag: event.target.value })}
+              >
                 <option value={ANY}>Any tag</option>
                 {tags.map((tag) => (
                   <option value={tag} key={tag}>
@@ -124,7 +158,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
           )}
 
           {filters.platform === 'pc' && (
-            <label>
+            <label {...stylex.props(styles.checkboxRow)}>
               <input
                 type="checkbox"
                 checked={filters.handheldOnly}
@@ -136,7 +170,12 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
             </label>
           )}
 
-          <Button variant="primary" label="Done" onClick={() => setIsOpen(false)} />
+          <Button
+            variant="primary"
+            label="Done"
+            xstyle={styles.touchTarget}
+            onClick={() => setIsOpen(false)}
+          />
         </Stack>
       </Dialog>
     </>

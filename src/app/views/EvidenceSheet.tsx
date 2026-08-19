@@ -1,6 +1,16 @@
 import { Dialog, IconButton, Stack } from '@astryxdesign/core';
+import * as stylex from '@stylexjs/stylex';
 import { GameDetail } from './GameDetail.js';
 import type { RankedGame } from '../../ranking/score.js';
+
+const styles = stylex.create({
+  // A 44px square hit area for the icon-only Close control (KTD2), applied
+  // locally so only this touch-first control grows past the 32px default.
+  touchTargetSquare: {
+    minBlockSize: 44,
+    minInlineSize: 44,
+  },
+});
 
 export interface EvidenceSheetProps {
   /** The entry whose evidence to show, or null when the sheet is closed. */
@@ -33,6 +43,7 @@ export function EvidenceSheet({ entry, onClose, onDismiss }: EvidenceSheetProps)
               label="Close"
               variant="ghost"
               icon={<span aria-hidden="true">✕</span>}
+              xstyle={styles.touchTargetSquare}
               onClick={onClose}
             />
           </Stack>

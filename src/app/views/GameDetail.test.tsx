@@ -39,7 +39,7 @@ describe('GameDetail hero image (U6)', () => {
     expect(img).toHaveAttribute('alt', '');
   });
 
-  it('falls back to a placeholder in the reserved frame on error (no broken image)', () => {
+  it('falls back to a compact unavailable strip on error, not the reserved void (U3)', () => {
     const entry = game({
       id: 'steam:1',
       name: 'Signal Drift',
@@ -50,9 +50,15 @@ describe('GameDetail hero image (U6)', () => {
     const img = document.querySelector('img');
     expect(img).not.toBeNull();
     fireEvent.error(img!);
-    // The image is swapped out; the reserved frame stays, so no layout jump.
+
+    // The image and the old 460:215 store-image frame are both gone...
     expect(document.querySelector('img')).toBeNull();
-    expect(screen.getByLabelText(/Signal Drift store image/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Signal Drift store image/i)).toBeNull();
+    // ...replaced by a compact fallback that stays decorative to assistive tech
+    // (the region and heading already name the game).
+    const fallback = screen.getByText(/store image unavailable/i);
+    expect(fallback).toBeInTheDocument();
+    expect(fallback.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('renders no hero when there is no Steam link', () => {

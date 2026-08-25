@@ -10,6 +10,16 @@ const styles = stylex.create({
   hint: {
     maxWidth: '18rem',
   },
+  // Local 44px hit areas (KTD2): the mode chips need only a taller block, the
+  // icon-only info control needs a full 44px square. Applied via `xstyle` so the
+  // enlargement is scoped to these touch-first controls, not the whole theme.
+  touchTarget: {
+    minBlockSize: 44,
+  },
+  touchTargetSquare: {
+    minBlockSize: 44,
+    minInlineSize: 44,
+  },
 });
 
 const MODES = Object.keys(MODE_LABELS) as RankingMode[];
@@ -42,6 +52,7 @@ export function FilterBar({ filters, onChange, tags }: FilterBarProps) {
             variant={mode === filters.mode ? 'primary' : 'ghost'}
             aria-pressed={mode === filters.mode}
             label={MODE_LABELS[mode]}
+            xstyle={styles.touchTarget}
             onClick={() => onChange({ ...filters, mode })}
           />
         ))}
@@ -62,6 +73,7 @@ export function FilterBar({ filters, onChange, tags }: FilterBarProps) {
             size="sm"
             label={`What ${MODE_LABELS[filters.mode]} means`}
             icon={<Icon icon="info" />}
+            xstyle={styles.touchTargetSquare}
           />
         </HoverCard>
       </Stack>

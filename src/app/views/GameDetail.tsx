@@ -10,7 +10,7 @@ import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
 const MAX_TAGS = 8;
 
 const styles = stylex.create({
-  /** Reserves the hero's box so nothing shifts as it loads or fails. */
+  /** The hero's box on success — a fixed 460:215 frame so nothing shifts as it loads. */
   heroFrame: {
     width: '100%',
     aspectRatio: '460 / 215',
@@ -23,38 +23,54 @@ const styles = stylex.create({
     objectFit: 'cover',
     display: 'block',
   },
-  /** Shown in the same reserved frame when the image 404s or is blocked. */
-  heroPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  /**
+   * Shown instead of the frame when the image 404s or is blocked (KTD3). A
+   * compact, themed strip — not the full 460:215 void the old placeholder left —
+   * that says the image is unavailable without competing with the title below.
+   */
+  heroFallback: {
+    display: 'flex',
+    alignItems: 'center',
+    paddingBlock: 10,
+    paddingInline: 14,
+    borderRadius: 8,
+    backgroundColor: 'var(--color-background-surface)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--color-border)',
   },
 });
 
 /**
- * The Steam store header, in a fixed frame that never collapses. Steam is the
- * only store in the corpus and every hero rides on one CDN URL, so the real risk
- * is a blocked or 404 image (or a CDN-host migration) — `onError` swaps to a
- * quiet placeholder in the same reserved box rather than leaving a broken image
- * or a layout jump. Decorative (`alt=""`): the section is already labelled with
- * the game's name. Referrer withheld so the CDN learns nothing about the reader.
+ * The Steam store header. Steam is the only store in the corpus and every hero
+ * rides on one CDN URL, so the real risk is a blocked or 404 image (or a CDN-host
+ * migration). On success it fills a fixed 460:215 frame; on `onError` it drops
+ * that frame for a compact "unavailable" strip (KTD3) rather than reserving the
+ * full box as an empty void. Both states are decorative to assistive technology
+ * (`alt=""` / `aria-hidden`): the section is already labelled with the game's
+ * name. Referrer withheld so the CDN learns nothing about the reader.
  */
-function Hero({ src, name }: { src: string; name: string }) {
+function Hero({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div {...stylex.props(styles.heroFallback)} aria-hidden="true">
+        <Text type="supporting">Store image unavailable</Text>
+      </div>
+    );
+  }
+
   return (
-    <div {...stylex.props(styles.heroFrame)} aria-label={`${name} store image`}>
-      {failed ? (
-        <div {...stylex.props(styles.heroPlaceholder)} aria-hidden="true" />
-      ) : (
-        <img
-          {...stylex.props(styles.heroImage)}
-          src={src}
-          alt=""
-          referrerPolicy="no-referrer"
-          fetchPriority="high"
-          onError={() => setFailed(true)}
-        />
-      )}
+    <div {...stylex.props(styles.heroFrame)}>
+      <img
+        {...stylex.props(styles.heroImage)}
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        fetchPriority="high"
+        onError={() => setFailed(true)}
+      />
     </div>
   );
 }
@@ -137,7 +153,7 @@ export function GameDetail({ game, contributing, onDismiss }: GameDetailProps) {
         <Heading level={2}>{game.name}</Heading>
 
         {/* Key on the src so the failed-load state can never outlive its image. */}
-        {heroSrc && <Hero key={heroSrc} src={heroSrc} name={game.name} />}
+        {heroSrc && <Hero key={heroSrc} src={heroSrc} />}
 
         {hasAvailability && (
           <Stack direction="vertical" gap={1}>

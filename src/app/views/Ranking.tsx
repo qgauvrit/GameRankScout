@@ -1,13 +1,5 @@
-import { useEffect, useState } from 'react';
-import {
-  Button,
-  ClickableCard,
-  EmptyState,
-  HoverCard,
-  ProgressBar,
-  Stack,
-  Text,
-} from '@astryxdesign/core';
+import { useEffect, useRef, useState } from 'react';
+import { ClickableCard, EmptyState, HoverCard, ProgressBar, Stack, Text } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 import { EvidenceSheet } from './EvidenceSheet.js';
 import { ExternalLink } from './ExternalLink.js';
@@ -23,11 +15,34 @@ import type { RankedGame } from '../../ranking/score.js';
  * emits its own inline `style` for the dynamic fill width; that is the design
  * system's, not ours.
  */
+/** The entrance rows use when auto-loaded on scroll: a subtle rise into place. */
+const fadeInUp = stylex.keyframes({
+  from: { opacity: 0, transform: 'translateY(6px)' },
+  to: { opacity: 1, transform: 'translateY(0)' },
+});
+
 const styles = stylex.create({
   /** The fixed-width column the evidence-strength meter and its readout sit in. */
   strengthMeter: {
     width: 72,
     flexShrink: 0,
+  },
+  /**
+   * Reveal for a row auto-loaded on scroll — snappy and subtle. Applied only to
+   * the newly appended rows (not the initial batch or a post-filter batch), so
+   * a fresh batch rises in rather than snapping. Honors reduced-motion: the
+   * animation is dropped entirely for readers who ask for less.
+   */
+  enter: {
+    animationName: {
+      default: fadeInUp,
+      // Explicit `none` (not `null`, which StyleX drops) so reduced-motion
+      // readers get the rows with no reveal at all.
+      '@media (prefers-reduced-motion: reduce)': 'none',
+    },
+    animationDuration: '220ms',
+    animationTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    animationFillMode: 'both',
   },
   /** The ranked list: a plain flex column with no list chrome. */
   list: {
@@ -47,10 +62,6 @@ const styles = stylex.create({
   // child shrink below its content's intrinsic width so its own text wraps.
   nameColumn: {
     minWidth: 0,
-  },
-  /** 44px minimum block for the touch-first "Show more" reveal control (KTD2). */
-  touchTarget: {
-    minBlockSize: 44,
   },
 });
 
@@ -95,17 +106,20 @@ function Entry({
   entry,
   position,
   onOpen,
+  animate,
 }: {
   entry: RankedGame;
   position: number;
   onOpen: (gameId: string) => void;
+  /** True only for rows just auto-loaded on scroll, so they alone reveal. */
+  animate: boolean;
 }) {
   const { game } = entry;
   const primaryStore = game.storeLinks[0];
   const strength = strengthPercent(entry);
 
   return (
-    <li>
+    <li {...stylex.props(animate && styles.enter)}>
       <ClickableCard label={game.name} onClick={() => onOpen(game.id)} padding={3}>
         <Stack direction="horizontal" gap={2} vAlign="center" hAlign="between">
           <Stack direction="horizontal" gap={3} vAlign="center" xstyle={styles.nameColumn}>
@@ -158,13 +172,29 @@ function Entry({
  * that leaves the list undisturbed (R9), and a visual reading of each row's
  * strength (R10). The thread links are the product's actual output, so nothing
  * sits between the ranking and them (R13).
+ *
+ * The list renders in pages of {@link PAGE_SIZE} (KTD1) and auto-extends as the
+ * reader nears the bottom — an IntersectionObserver on a sentinel below the
+ * list appends the next page, so there is no button to press. Everything is
+ * already in memory (ranking is a pure function over the loaded corpus), so
+ * extending is a render, never a fetch (R12).
  */
 export function Ranking({ ranked, onDismiss }: RankingProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   // How many of the (already computed) ranked entries are revealed. The default
   // view is bounded to the first page so a phone does not render hundreds of
-  // rows at once (KTD1); the reader reveals the rest deliberately.
+  // rows at once (KTD1); scrolling reveals the rest.
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // How many rows were shown at the previous commit. Rows at or past this index
+  // are the ones this render just revealed on scroll, so only they animate in —
+  // the first page and a fresh post-filter page (where the count resets down)
+  // hold still. Seeded at PAGE_SIZE so the initial page never animates.
+  const shownBeforeRef = useRef(PAGE_SIZE);
+  const animateFrom = shownBeforeRef.current;
+  useEffect(() => {
+    shownBeforeRef.current = visibleCount;
+  });
 
   // A new ranked result — a mode, filter, source, community or dismissal change —
   // starts the reveal over. Opening or closing a detail sheet does not change
@@ -172,6 +202,27 @@ export function Ranking({ ranked, onDismiss }: RankingProps) {
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [ranked]);
+
+  const hasMore = visibleCount < ranked.length;
+
+  // Append the next page when the sentinel below the list scrolls into view.
+  // Re-created as the window grows (visibleCount dep) so that if the sentinel is
+  // still on screen after a page, re-observing fires again and fills until it is
+  // pushed past the margin. `rootMargin` starts the next page a little early.
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasMore || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((count) => Math.min(count + PAGE_SIZE, ranked.length));
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, ranked.length, visibleCount]);
 
   if (ranked.length === 0) {
     return (
@@ -184,12 +235,8 @@ export function Ranking({ ranked, onDismiss }: RankingProps) {
   }
 
   const openEntry = ranked.find((entry) => entry.game.id === openId) ?? null;
-  const total = ranked.length;
-  const shown = Math.min(visibleCount, total);
-  const hasMore = shown < total;
-  // The final page reveals only what remains, so the control reads honestly
-  // ("Show 12 more") rather than promising a full page that is not there.
-  const nextStep = Math.min(PAGE_SIZE, total - shown);
+  // `visible` is a prefix of `ranked`, so `index + 1` stays the true rank.
+  const visible = ranked.slice(0, visibleCount);
 
   return (
     <>
@@ -199,22 +246,17 @@ export function Ranking({ ranked, onDismiss }: RankingProps) {
         as the list grows.
       */}
       <ol {...stylex.props(styles.list)}>
-        {ranked.slice(0, shown).map((entry, index) => (
-          <Entry entry={entry} key={entry.game.id} position={index + 1} onOpen={setOpenId} />
+        {visible.map((entry, index) => (
+          <Entry
+            entry={entry}
+            key={entry.game.id}
+            position={index + 1}
+            onOpen={setOpenId}
+            animate={index >= animateFrom}
+          />
         ))}
       </ol>
-
-      {hasMore && (
-        <Stack direction="vertical" gap={2} hAlign="center">
-          <Text type="supporting">{`${shown} of ${total} games shown`}</Text>
-          <Button
-            variant="secondary"
-            label={`Show ${nextStep} more`}
-            xstyle={styles.touchTarget}
-            onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-          />
-        </Stack>
-      )}
+      {hasMore && <div ref={sentinelRef} aria-hidden="true" />}
 
       <EvidenceSheet entry={openEntry} onClose={() => setOpenId(null)} onDismiss={onDismiss} />
     </>

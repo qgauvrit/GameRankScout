@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Dialog, Heading, Stack, Text } from '@astryxdesign/core';
+import { Button, CheckboxInput, Dialog, Heading, Stack, Text } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 import { PLATFORMS, RANKING_WINDOWS } from '../../corpus/schema.js';
 import { WINDOW_LABELS, platformLabel } from '../labels.js';
@@ -17,15 +17,8 @@ const styles = stylex.create({
     inlineSize: '100%',
     minBlockSize: 44,
   },
-  /** 44px minimum block for the touch-first Filters trigger and Done action. */
+  /** 44px minimum block for the touch-first controls (Filters trigger, Done, handheld). */
   touchTarget: {
-    minBlockSize: 44,
-  },
-  /** Gives the handheld checkbox row a 44px hit area without restyling the box. */
-  checkboxRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
     minBlockSize: 44,
   },
 });
@@ -81,6 +74,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
         isOpen={isOpen}
         onOpenChange={setIsOpen}
         position={{ bottom: 0, start: 0, end: 0 }}
+        width="100%"
         maxHeight="80vh"
         padding={4}
       >
@@ -158,16 +152,15 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
           )}
 
           {filters.platform === 'pc' && (
-            <label {...stylex.props(styles.checkboxRow)}>
-              <input
-                type="checkbox"
-                checked={filters.handheldOnly}
-                onChange={(event) => set({ handheldOnly: event.target.checked })}
-              />
-              <Text type="body" as="span">
-                Handheld-ready only
-              </Text>
-            </label>
+            // The design-system checkbox (consistent with Sources/Communities),
+            // kept at a 44px touch target so it stays as reachable as the raw
+            // control it replaced (KTD2).
+            <CheckboxInput
+              label="Handheld-ready only"
+              value={filters.handheldOnly}
+              onChange={(checked) => set({ handheldOnly: checked })}
+              xstyle={styles.touchTarget}
+            />
           )}
 
           <Button

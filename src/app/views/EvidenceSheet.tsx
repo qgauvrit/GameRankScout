@@ -1,4 +1,4 @@
-import { Dialog, IconButton, Stack } from '@astryxdesign/core';
+import { Dialog, Icon, IconButton, Stack } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 import { GameDetail } from './GameDetail.js';
 import type { RankedGame } from '../../ranking/score.js';
@@ -33,6 +33,7 @@ export function EvidenceSheet({ entry, onClose, onDismiss }: EvidenceSheetProps)
         if (!open) onClose();
       }}
       position={{ bottom: 0, start: 0, end: 0 }}
+      width="100%"
       maxHeight="85vh"
       padding={4}
     >
@@ -42,7 +43,7 @@ export function EvidenceSheet({ entry, onClose, onDismiss }: EvidenceSheetProps)
             <IconButton
               label="Close"
               variant="ghost"
-              icon={<span aria-hidden="true">✕</span>}
+              icon={<Icon icon="close" />}
               xstyle={styles.touchTargetSquare}
               onClick={onClose}
             />

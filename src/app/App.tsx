@@ -17,7 +17,7 @@ import { mergeAdhocItems } from './adhoc/merge.js';
 import { MODE_LABELS, WINDOW_LABELS, sourceLabel } from './labels.js';
 import { RANKING_WINDOWS } from '../corpus/schema.js';
 import * as stylex from '@stylexjs/stylex';
-import { Button, EmptyState, Heading, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
+import { Button, EmptyState, Heading, Icon, IconButton, Spinner, Stack, Text } from '@astryxdesign/core';
 import { StatusLine, type StatusItem } from './views/StatusLine.js';
 import type { LoadedCorpus } from './corpus.js';
 import type { Filters } from './filters/apply.js';
@@ -332,7 +332,7 @@ export function App() {
           <IconButton
             label="Settings"
             variant="ghost"
-            icon={<span aria-hidden="true">☰</span>}
+            icon={<Icon icon="menu" />}
             xstyle={styles.touchTargetSquare}
             onClick={() => setShowSettings(true)}
           />

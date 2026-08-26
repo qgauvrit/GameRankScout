@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, within, act, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Ranking } from './Ranking.js';
 import { rankGames } from '../../ranking/score.js';
@@ -25,11 +25,11 @@ function entryFor(name: string) {
   return screen.getByRole('button', { name: new RegExp(name, 'i') });
 }
 
-/** A ranked list of `count` distinct games, for exercising the reveal control. */
-function manyRanked(count: number) {
+/** A ranked list of `count` distinct games, for exercising the paged reveal. */
+function manyRanked(count: number, idPrefix = 'steam') {
   return rank(
     Array.from({ length: count }, (_, index) =>
-      game({ id: `steam:${index + 1}`, name: `Game ${index + 1}` }),
+      game({ id: `${idPrefix}:${index + 1}`, name: `Game ${index + 1}` }),
     ),
   );
 }
@@ -304,67 +304,10 @@ describe('ranking view', () => {
     expect(screen.queryByRole('region', { name: /Broadcast Storm/i })).toBeNull();
   });
 
-  it('bounds the initial list to one page and reveals the rest on demand (U2)', async () => {
-    const user = userEvent.setup();
-    renderRanking(manyRanked(26));
-
-    // First page only, with a control that reveals exactly what remains.
-    expect(screen.getAllByRole('listitem')).toHaveLength(25);
-    expect(screen.getByText('25 of 26 games shown')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Show 1 more' }));
-
-    // The whole list, in unbroken ordinal order, with the control gone.
-    const entries = screen.getAllByRole('listitem');
-    expect(entries).toHaveLength(26);
-    expect(entries[25]!).toHaveTextContent('26');
-    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
-  });
-
-  it('reveals in equal pages when the list divides evenly (U2)', async () => {
-    const user = userEvent.setup();
-    renderRanking(manyRanked(50));
-
-    expect(screen.getAllByRole('listitem')).toHaveLength(25);
-    await user.click(screen.getByRole('button', { name: 'Show 25 more' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(50);
-    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
-  });
-
-  it('shows no reveal control when a single page holds everything (U2)', () => {
-    renderRanking(manyRanked(25));
-
-    expect(screen.getAllByRole('listitem')).toHaveLength(25);
-    expect(screen.queryByRole('button', { name: /show \d+ more/i })).toBeNull();
-    expect(screen.queryByText(/games shown/i)).toBeNull();
-  });
-
-  it('resets to the first page when the ranked input changes (U2)', async () => {
-    const user = userEvent.setup();
-    const { rerender } = renderRanking(manyRanked(30));
-
-    await user.click(screen.getByRole('button', { name: 'Show 5 more' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(30);
-
-    // A new ranked result (a filter or mode change) starts the reveal over.
-    rerender(<Ranking ranked={manyRanked(40)} onDismiss={vi.fn()} />);
-    expect(screen.getAllByRole('listitem')).toHaveLength(25);
-    expect(screen.getByText('25 of 40 games shown')).toBeInTheDocument();
-  });
-
-  it('keeps the revealed list intact when a detail sheet opens (U2)', async () => {
-    const user = userEvent.setup();
-    renderRanking(manyRanked(26));
-
-    await user.click(screen.getByRole('button', { name: 'Show 1 more' }));
-    expect(screen.getAllByRole('listitem')).toHaveLength(26);
-
-    // Opening an entry must not collapse the list back to the first page.
-    // "Game 26" is unambiguous where "Game 1" would also match Game 10–19.
-    await user.click(entryFor('Game 26'));
-    expect(screen.getByRole('region', { name: /Game 26/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(26);
-  });
+  // Paging behavior (initial page bound, auto-append on scroll, reset on a new
+  // ranked set, single-page case) is exercised against the IntersectionObserver
+  // in the 'Ranking windowing' block below, since the reveal is now on-scroll
+  // rather than a button.
 
   it('shows the metadata filtering is built on', async () => {
     const user = userEvent.setup();
@@ -388,5 +331,119 @@ describe('ranking view', () => {
     expect(detail.getByText(/Switch/)).toBeTruthy();
     expect(detail.getByText(/200K/)).toBeTruthy();
     expect(detail.getByText(/Deck Verified/i)).toBeTruthy();
+  });
+});
+
+/**
+ * The ranking renders in batches of 25 and auto-extends as a sentinel below the
+ * list scrolls into view. jsdom implements no `IntersectionObserver` (and a
+ * headless/hidden tab freezes the real one), so the observer is stubbed here:
+ * the test captures each instance's callback and fires it to stand in for the
+ * sentinel entering the viewport. This exercises the windowing logic directly
+ * rather than relying on layout the test environment cannot produce.
+ */
+
+interface StubObserver {
+  callback: IntersectionObserverCallback;
+  observed: Element[];
+  disconnected: boolean;
+}
+
+let observers: StubObserver[] = [];
+
+class MockIntersectionObserver implements IntersectionObserver {
+  readonly root = null;
+  readonly rootMargin = '';
+  readonly thresholds = [];
+  private record: StubObserver;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.record = { callback, observed: [], disconnected: false };
+    observers.push(this.record);
+  }
+
+  observe(target: Element): void {
+    this.record.observed.push(target);
+  }
+  disconnect(): void {
+    this.record.disconnected = true;
+  }
+  unobserve(): void {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+}
+
+/** Fire the most recently created, still-connected observer as if intersecting. */
+function scrollSentinelIntoView() {
+  const live = [...observers].reverse().find((o) => !o.disconnected && o.observed.length > 0);
+  if (!live) throw new Error('no live observer to trigger');
+  act(() => {
+    live.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+  });
+}
+
+function rowCount(): number {
+  return screen.getAllByRole('listitem').length;
+}
+
+describe('Ranking windowing', () => {
+  beforeEach(() => {
+    observers = [];
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('renders only the first batch of 25 for a longer ranking', () => {
+    render(<Ranking ranked={manyRanked(60)} onDismiss={() => {}} />);
+    expect(rowCount()).toBe(25);
+  });
+
+  it('appends the next batch each time the sentinel scrolls into view', () => {
+    render(<Ranking ranked={manyRanked(60)} onDismiss={() => {}} />);
+    expect(rowCount()).toBe(25);
+
+    scrollSentinelIntoView();
+    expect(rowCount()).toBe(50);
+
+    scrollSentinelIntoView();
+    expect(rowCount()).toBe(60); // clamped to the total, not 75
+  });
+
+  it('renders everything at once when the ranking fits in one batch', () => {
+    render(<Ranking ranked={manyRanked(10)} onDismiss={() => {}} />);
+    expect(rowCount()).toBe(10);
+    // Nothing more to load, so no sentinel is observed.
+    expect(observers.some((o) => o.observed.length > 0)).toBe(false);
+  });
+
+  it('resets to the first batch when the ranked set changes (new filter/mode)', () => {
+    const view = render(<Ranking ranked={manyRanked(60)} onDismiss={() => {}} />);
+    scrollSentinelIntoView();
+    expect(rowCount()).toBe(50);
+
+    // A new filter/mode/window yields a fresh ranked array.
+    view.rerender(<Ranking ranked={manyRanked(60, 'other')} onDismiss={() => {}} />);
+    expect(rowCount()).toBe(25);
+  });
+
+  it('keeps the expanded list intact when a detail sheet opens', async () => {
+    const user = userEvent.setup();
+    render(<Ranking ranked={manyRanked(26)} onDismiss={() => {}} />);
+    scrollSentinelIntoView(); // reveal all 26
+    expect(rowCount()).toBe(26);
+
+    // Opening an entry must not collapse the list back to the first page —
+    // the sheet does not change `ranked`, so the reveal is preserved.
+    await user.click(entryFor('Game 26'));
+    expect(screen.getByRole('region', { name: /Game 26/i })).toBeInTheDocument();
+    expect(rowCount()).toBe(26);
   });
 });

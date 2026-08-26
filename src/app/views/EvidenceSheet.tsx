@@ -1,9 +1,40 @@
-import { Dialog, IconButton, Stack } from '@astryxdesign/core';
+import { Dialog, IconButton } from '@astryxdesign/core';
 import * as stylex from '@stylexjs/stylex';
 import { GameDetail } from './GameDetail.js';
 import type { RankedGame } from '../../ranking/score.js';
 
 const styles = stylex.create({
+  /**
+   * Make the Dialog behave as a bottom sheet rather than its default 400px box.
+   * The position below pins both inline edges (`start`/`end`), which with the
+   * Dialog's default `width: 400` over-constrains the inline axis — the browser
+   * keeps the 400px width and the inline-start inset, collapsing the sheet into
+   * the bottom-left corner. Stretching to the reading column's width and
+   * centring the surplus is what anchors it edge-to-edge along the bottom.
+   */
+  sheet: {
+    width: '100%',
+    // Match the app's reading column (App.tsx) so the sheet lines up with the
+    // ranking it covers instead of spanning an unreadable full-desktop width.
+    maxWidth: '46rem',
+    marginInline: 'auto',
+  },
+  // The close control stays put while the evidence scrolls beneath it.
+  header: {
+    flexShrink: 0,
+    display: 'flex',
+    justifyContent: 'flex-end',
+  },
+  /**
+   * The scroll region for the evidence. The Dialog's inner box caps its height
+   * and hides overflow, so a game with a long list of contributing threads has
+   * its tail clipped unless the content owns a scroll region of its own.
+   */
+  body: {
+    flex: '1 1 auto',
+    minBlockSize: 0,
+    overflowY: 'auto',
+  },
   // A 44px square hit area for the icon-only Close control (KTD2), applied
   // locally so only this touch-first control grows past the 32px default.
   touchTargetSquare: {
@@ -35,10 +66,11 @@ export function EvidenceSheet({ entry, onClose, onDismiss }: EvidenceSheetProps)
       position={{ bottom: 0, start: 0, end: 0 }}
       maxHeight="85vh"
       padding={4}
+      xstyle={styles.sheet}
     >
       {entry && (
-        <Stack direction="vertical" gap={2}>
-          <Stack direction="horizontal" hAlign="end">
+        <>
+          <div {...stylex.props(styles.header)}>
             <IconButton
               label="Close"
               variant="ghost"
@@ -46,16 +78,18 @@ export function EvidenceSheet({ entry, onClose, onDismiss }: EvidenceSheetProps)
               xstyle={styles.touchTargetSquare}
               onClick={onClose}
             />
-          </Stack>
-          <GameDetail
-            game={entry.game}
-            contributing={entry.contributing}
-            onDismiss={(id) => {
-              onDismiss(id);
-              onClose();
-            }}
-          />
-        </Stack>
+          </div>
+          <div {...stylex.props(styles.body)}>
+            <GameDetail
+              game={entry.game}
+              contributing={entry.contributing}
+              onDismiss={(id) => {
+                onDismiss(id);
+                onClose();
+              }}
+            />
+          </div>
+        </>
       )}
     </Dialog>
   );

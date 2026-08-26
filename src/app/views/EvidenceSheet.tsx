@@ -13,27 +13,38 @@ const styles = stylex.create({
    * centring the surplus is what anchors it edge-to-edge along the bottom.
    */
   sheet: {
+    // Anchor for the pinned close control below.
+    position: 'relative',
     width: '100%',
     // Match the app's reading column (App.tsx) so the sheet lines up with the
     // ranking it covers instead of spanning an unreadable full-desktop width.
     maxWidth: '46rem',
     marginInline: 'auto',
   },
-  // The close control stays put while the evidence scrolls beneath it.
+  /**
+   * The close control is pinned to the sheet's top-right corner rather than
+   * given its own row: a full-width band holding a single ✕ pushed the game's
+   * title a whole row down and wasted the top of the sheet. Pinned, it still
+   * stays put while the evidence scrolls beneath it, and the title now starts
+   * at the very top.
+   */
   header: {
-    flexShrink: 0,
-    display: 'flex',
-    justifyContent: 'flex-end',
+    position: 'absolute',
+    insetBlockStart: 8,
+    insetInlineEnd: 8,
+    zIndex: 1,
   },
   /**
    * The scroll region for the evidence. The Dialog's inner box caps its height
    * and hides overflow, so a game with a long list of contributing threads has
-   * its tail clipped unless the content owns a scroll region of its own.
+   * its tail clipped unless the content owns a scroll region of its own. Its
+   * top line (the game title) is kept clear of the pinned close control.
    */
   body: {
     flex: '1 1 auto',
     minBlockSize: 0,
     overflowY: 'auto',
+    paddingInlineEnd: 44,
   },
   // A 44px square hit area for the icon-only Close control (KTD2), applied
   // locally so only this touch-first control grows past the 32px default.

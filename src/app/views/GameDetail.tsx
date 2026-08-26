@@ -10,9 +10,15 @@ import type { EvidenceRecord, GameEntry } from '../../corpus/schema.js';
 const MAX_TAGS = 8;
 
 const styles = stylex.create({
-  /** The hero's box on success — a fixed 460:215 frame so nothing shifts as it loads. */
+  /**
+   * The hero's box on success — a fixed 460:215 frame so nothing shifts as it
+   * loads. Capped at the Steam header's native 460px: past that the sheet's full
+   * reading-column width would both upscale (blur) the image and tower over the
+   * text, so it holds native size and sits left with the rest of the content.
+   */
   heroFrame: {
     width: '100%',
+    maxWidth: 460,
     aspectRatio: '460 / 215',
     borderRadius: 8,
     overflow: 'hidden',

@@ -9,6 +9,19 @@ import type { Filters } from './apply.js';
 import type { Platform, RankingWindow } from '../../corpus/schema.js';
 
 const styles = stylex.create({
+  /**
+   * Make the Dialog behave as a bottom sheet rather than its default 400px box.
+   * The position pins both inline edges (`start`/`end`), which with the Dialog's
+   * default `width: 400` over-constrains the inline axis — the browser keeps the
+   * 400px width and the inline-start inset, collapsing the sheet into the
+   * bottom-left corner. Stretching to the reading column's width and centring
+   * the surplus anchors it edge-to-edge along the bottom (matches EvidenceSheet).
+   */
+  sheet: {
+    width: '100%',
+    maxWidth: '46rem',
+    marginInline: 'auto',
+  },
   // A 44px touch target for the native selects (KTD2): the OS picker still opens
   // on tap, but the control the reader aims at is now full-width and tall enough
   // to hit on a phone. `block` so the select sits under its label.
@@ -83,6 +96,7 @@ export function FiltersSheet({ filters, onChange, tags }: FiltersSheetProps) {
         position={{ bottom: 0, start: 0, end: 0 }}
         maxHeight="80vh"
         padding={4}
+        xstyle={styles.sheet}
       >
         <Stack direction="vertical" gap={3}>
           <Heading level={2}>Filters</Heading>

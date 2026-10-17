@@ -1,12 +1,12 @@
 {
-  "startedAt": "2026-10-16T09:44:56.411Z",
-  "finishedAt": "2026-10-16T11:59:54.920Z",
+  "startedAt": "2026-10-17T09:18:27.975Z",
+  "finishedAt": "2026-10-17T11:33:47.669Z",
   "ok": true,
   "sources": [
     {
       "source": "reddit",
       "ok": true,
-      "evidenceCount": 6906,
+      "evidenceCount": 6923,
       "communitiesCovered": 34,
       "rejections": 0,
       "error": null
@@ -14,7 +14,7 @@
     {
       "source": "lemmy",
       "ok": true,
-      "evidenceCount": 55,
+      "evidenceCount": 49,
       "communitiesCovered": 3,
       "rejections": 0,
       "error": null
@@ -22,14 +22,14 @@
     {
       "source": "itch",
       "ok": true,
-      "evidenceCount": 3,
+      "evidenceCount": 2,
       "communitiesCovered": 1,
       "rejections": 0,
       "error": null
     }
   ],
-  "games": 1052,
-  "evidence": 6964,
-  "corpusBytes": 3471565,
-  "publish": "published"
+  "games": 1040,
+  "evidence": 6974,
+  "corpusBytes": 3467416,
+  "publish": "not_attempted"
 }
